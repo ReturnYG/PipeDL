@@ -114,6 +114,30 @@ pipedl_cli resume
 
 AI agents and scripts should register long-running experiments with PipeDL instead of launching them directly.
 
+To make an AI agent use PipeDL in another project, place PipeDL's `AGENTS.md` file in that project's root directory. Agents that support project instruction files will read it before running commands and will route long-running training, evaluation, benchmark, and deep learning commands through PipeDL.
+
+Download the instruction file into another project with PowerShell:
+
+```powershell
+Invoke-WebRequest `
+  -Uri https://raw.githubusercontent.com/ReturnYG/PipeDL/main/AGENTS.md `
+  -OutFile AGENTS.md
+```
+
+Or with `curl`:
+
+```bash
+curl -L https://raw.githubusercontent.com/ReturnYG/PipeDL/main/AGENTS.md -o AGENTS.md
+```
+
+After adding `AGENTS.md`, start the PipeDL desktop app, then ask the agent to launch experiments normally. The agent should first check:
+
+```bash
+pipedl_cli status
+```
+
+Then it should register experiments with:
+
 ```bash
 pipedl_cli run \
   --name agent-exp-001 \
@@ -122,6 +146,8 @@ pipedl_cli run \
   --created-by agent:codex \
   -- python train.py --config a.yaml --gpu 0
 ```
+
+If PipeDL is not running, the agent should ask you to start `PipeDL` first. The desktop app must be running because it owns the queue scheduler and process manager.
 
 Agents can also submit experiments to the local API:
 
@@ -138,5 +164,3 @@ POST http://127.0.0.1:48127/experiments
   "created_by": "agent:codex"
 }
 ```
-
-The desktop app must be running because it owns the queue scheduler and process manager.
