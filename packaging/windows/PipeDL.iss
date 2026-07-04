@@ -1,7 +1,11 @@
 #define MyAppName "PipeDL"
 #define MyAppVersion GetEnv("PIPEDL_VERSION")
 #if MyAppVersion == ""
-#define MyAppVersion "0.1.1"
+#define MyAppVersion "0.1.3"
+#endif
+#define SourceRoot GetEnv("PIPEDL_SOURCE_ROOT")
+#if SourceRoot == ""
+#define SourceRoot "..\.."
 #endif
 #define MyAppPublisher "PipeDL"
 #define MyAppExeName "PipeDL.exe"
@@ -28,9 +32,9 @@ CloseApplications=yes
 CloseApplicationsFilter=PipeDL.exe,pipedl.exe
 
 [Files]
-Source: "..\..\dist\PipeDL\PipeDL.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\dist\PipeDL\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "..\..\dist\pipedl.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\dist\PipeDL\PipeDL.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\dist\PipeDL\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceRoot}\dist\pipedl.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\PipeDL"; Filename: "{app}\{#MyAppExeName}"

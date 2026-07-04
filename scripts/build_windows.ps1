@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.1",
+    [string]$Version = "0.1.3",
     [switch]$SkipInstaller
 )
 
@@ -30,8 +30,14 @@ if (-not (Test-Path $CliExe)) {
     throw "Missing CLI executable: $CliExe"
 }
 
+Write-Host "Built GUI directory contents:"
+Get-ChildItem -Path (Join-Path $Root "dist\PipeDL") -Force | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
+Write-Host "Built CLI executable:"
+Get-Item $CliExe | Select-Object FullName, Length, LastWriteTime | Format-List
+
 if (-not $SkipInstaller) {
     $env:PIPEDL_VERSION = $Version
+    $env:PIPEDL_SOURCE_ROOT = $Root
     $iscc = Get-Command iscc.exe -ErrorAction SilentlyContinue
     if (-not $iscc) {
         throw "Inno Setup compiler is not installed. Install it from https://jrsoftware.org/isinfo.php or run with -SkipInstaller."
