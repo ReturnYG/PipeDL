@@ -141,10 +141,7 @@ class PipeDLApp(tk.Tk):
         )
         self.card_scrollbar = ttk.Scrollbar(list_shell, orient=tk.VERTICAL, command=self.card_canvas.yview)
         self.cards_frame = tk.Frame(self.card_canvas, bg=self.colors["bg"])
-        self.cards_frame.bind(
-            "<Configure>",
-            lambda _event: self.card_canvas.configure(scrollregion=self.card_canvas.bbox("all")),
-        )
+        self.cards_frame.bind("<Configure>", lambda _event: self._sync_card_scrollregion())
         self.cards_window = self.card_canvas.create_window((0, 0), window=self.cards_frame, anchor="nw")
         self.card_canvas.configure(yscrollcommand=self.card_scrollbar.set)
         self.card_canvas.grid(row=0, column=0, sticky="nsew")
@@ -540,6 +537,8 @@ class PipeDLApp(tk.Tk):
         return position
 
     def _auto_scroll_during_drag(self, y_root: int) -> None:
+        if not self._cards_can_scroll():
+            return
         top = self.queue_region.winfo_rooty()
         bottom = top + self.queue_region.winfo_height()
         margin = 36
@@ -704,6 +703,7 @@ class PipeDLApp(tk.Tk):
 
     def _resize_cards_window(self, event) -> None:
         self.card_canvas.itemconfigure(self.cards_window, width=event.width)
+        self._sync_card_scrollregion()
 
     def _attach_card_select(self, widget: tk.Widget, exp_id: str) -> None:
         widget.bind("<Button-1>", lambda _event, item_id=exp_id: self.select_experiment(item_id), add="+")
@@ -711,6 +711,9 @@ class PipeDLApp(tk.Tk):
     def _on_mousewheel(self, event) -> None:
         if not self._event_in_queue_region(event):
             return
+        if not self._cards_can_scroll():
+            self.card_canvas.yview_moveto(0)
+            return "break"
         if event.num == 4:
             self.card_canvas.yview_scroll(-3, "units")
         elif event.num == 5:
@@ -718,6 +721,34 @@ class PipeDLApp(tk.Tk):
         else:
             delta = int(-1 * (event.delta / 120))
             self.card_canvas.yview_scroll(delta, "units")
+        self._clamp_card_scroll()
+        return "break"
+
+    def _sync_card_scrollregion(self) -> None:
+        canvas_width = max(1, self.card_canvas.winfo_width())
+        canvas_height = max(1, self.card_canvas.winfo_height())
+        content_height = max(self.cards_frame.winfo_reqheight(), self.cards_frame.winfo_height())
+        scroll_height = max(canvas_height, content_height)
+        self.card_canvas.configure(scrollregion=(0, 0, canvas_width, scroll_height))
+        if content_height <= canvas_height:
+            self.card_canvas.yview_moveto(0)
+        else:
+            self._clamp_card_scroll()
+
+    def _cards_can_scroll(self) -> bool:
+        canvas_height = max(1, self.card_canvas.winfo_height())
+        content_height = max(self.cards_frame.winfo_reqheight(), self.cards_frame.winfo_height())
+        return content_height > canvas_height + 1
+
+    def _clamp_card_scroll(self) -> None:
+        if not self._cards_can_scroll():
+            self.card_canvas.yview_moveto(0)
+            return
+        first, last = self.card_canvas.yview()
+        if first < 0:
+            self.card_canvas.yview_moveto(0)
+        elif last > 1:
+            self.card_canvas.yview_moveto(max(0.0, 1.0 - (last - first)))
 
     def _event_in_queue_region(self, event) -> bool:
         widget = self.queue_region

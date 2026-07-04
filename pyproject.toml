@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pipedl"
-version = "0.1.6"
+version = "0.1.7"
 description = "Local desktop queue manager for deep learning CLI experiments."
 readme = "README.md"
 requires-python = ">=3.10"
