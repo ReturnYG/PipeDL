@@ -6,7 +6,7 @@ from PyInstaller.utils.hooks import collect_submodules
 
 
 hiddenimports = collect_submodules("pipedl")
-entrypoint = os.path.abspath(os.path.join(SPECPATH, "..", "..", "pipedl", "__main__.py"))
+entrypoint = os.path.abspath(os.path.join(SPECPATH, "..", "..", "pipedl_cli.py"))
 
 
 a = Analysis(

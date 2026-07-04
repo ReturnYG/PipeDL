@@ -27,12 +27,12 @@ def api_request(method: str, path: str, payload: dict | None = None) -> dict:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.URLError as exc:
         raise SystemExit(
-            "Cannot connect to PipeDL desktop app. Start it with: python -m pipedl app"
+            "Cannot connect to PipeDL desktop app. Start PipeDL from the Start Menu first."
         ) from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="pipedl")
+    parser = argparse.ArgumentParser(prog="pipedl_cli")
     sub = parser.add_subparsers(dest="command_name", required=True)
 
     sub.add_parser("app", help="Start the local desktop app.")

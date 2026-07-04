@@ -1,7 +1,7 @@
 #define MyAppName "PipeDL"
 #define MyAppVersion GetEnv("PIPEDL_VERSION")
 #if MyAppVersion == ""
-#define MyAppVersion "0.1.4"
+#define MyAppVersion "0.1.5"
 #endif
 #define SourceRoot GetEnv("PIPEDL_SOURCE_ROOT")
 #if SourceRoot == ""

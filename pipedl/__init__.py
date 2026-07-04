@@ -1,4 +1,4 @@
 """PipeDL local experiment queue manager."""
 
 __all__ = ["__version__"]
-__version__ = "0.1.4"
+__version__ = "0.1.5"
