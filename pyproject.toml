@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipedl"
+version = "0.1.0"
+description = "Local desktop queue manager for deep learning CLI experiments."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "PipeDL" }]
+dependencies = []
+
+[project.scripts]
+pipedl = "pipedl.cli:main"
+pipedl-gui = "pipedl.app:run_app"
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6"]
+
+[tool.setuptools.packages.find]
+include = ["pipedl*"]

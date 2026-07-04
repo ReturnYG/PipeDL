@@ -1,0 +1,9 @@
+.pipedl/
+runs/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
