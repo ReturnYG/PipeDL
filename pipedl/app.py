@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from . import __version__
 from .api import LocalApiServer
 from .config import DEFAULT_HOST, DEFAULT_PORT, get_paths
 from .demo import demo_experiment
 from .models import ExperimentCreate, SHELL_BASH, SUPPORTED_SHELLS
 from .scheduler import Scheduler
 from .storage import Storage, read_tail
+from .updater import UpdateInfo, check_for_update, download_update, launch_installer
 
 
 class PipeDLApp(tk.Tk):
@@ -17,10 +20,19 @@ class PipeDLApp(tk.Tk):
         self.storage = storage
         self.scheduler = scheduler
         self.api_server = api_server
+        self._closing = False
         self.selected_id: str | None = None
         self._refresh_after_id: str | None = None
         self.card_widgets: dict[str, dict] = {}
         self._rendered_ids: list[str] = []
+        self.dragging_exp_id: str | None = None
+        self.drag_preview: tk.Toplevel | None = None
+        self.drag_placeholder: tk.Frame | None = None
+        self.drag_placeholder_position: int | None = None
+        self.current_drop_position: int | None = None
+        self.update_dialog: tk.Toplevel | None = None
+        self.update_label_var = tk.StringVar(value="")
+        self.update_progress_var = tk.DoubleVar(value=0.0)
         self.colors = {
             "bg": "#f4f7fb",
             "panel": "#ffffff",
@@ -44,6 +56,7 @@ class PipeDLApp(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self._build_ui()
         self.refresh()
+        self.after(1200, self.check_updates_on_startup)
 
     def _build_ui(self) -> None:
         self.style = ttk.Style(self)
@@ -187,6 +200,9 @@ class PipeDLApp(tk.Tk):
         if self._refresh_after_id:
             self.after_cancel(self._refresh_after_id)
             self._refresh_after_id = None
+        if self.dragging_exp_id:
+            self._refresh_after_id = self.after(1500, self.refresh)
+            return
         summary = self.storage.summary()
         self.summary_var.set(
             "API http://%s:%s | running=%s paused=%s queued=%s succeeded=%s failed=%s stopped=%s queue_paused=%s"
@@ -249,6 +265,7 @@ class PipeDLApp(tk.Tk):
             self._update_card(exp, index, queued_ids, queue_paused)
 
     def _clear_cards(self) -> None:
+        self._destroy_drag_visuals()
         for child in self.cards_frame.winfo_children():
             child.destroy()
         self.card_widgets.clear()
@@ -260,15 +277,18 @@ class PipeDLApp(tk.Tk):
         border = self._status_color(exp["status"]) if selected or exp["status"] == "running" else self.colors["border"]
         card = tk.Frame(self.cards_frame, bg=bg, highlightthickness=1, highlightbackground=border)
         card.pack(fill=tk.X, pady=(0, 10))
-        card.columnconfigure(1, weight=1)
+        card.columnconfigure(2, weight=1)
         self._attach_card_select(card, exp["id"])
 
+        handle = self._create_drag_handle(card, exp, bg)
+        handle.grid(row=0, column=0, rowspan=3, sticky="nsw", padx=(8, 0), pady=8)
+
         stripe = tk.Frame(card, bg=self._status_color(exp["status"]), width=5)
-        stripe.grid(row=0, column=0, rowspan=3, sticky="nsw")
+        stripe.grid(row=0, column=1, rowspan=3, sticky="nsw", padx=(8, 0))
         self._attach_card_select(stripe, exp["id"])
 
         header = tk.Frame(card, bg=bg)
-        header.grid(row=0, column=1, sticky="ew", padx=12, pady=(10, 2))
+        header.grid(row=0, column=2, sticky="ew", padx=12, pady=(10, 2))
         header.columnconfigure(1, weight=1)
         self._attach_card_select(header, exp["id"])
         status_label = tk.Label(
@@ -302,7 +322,7 @@ class PipeDLApp(tk.Tk):
             font=("Segoe UI", 9),
             anchor="w",
         )
-        meta_label.grid(row=1, column=1, sticky="ew", padx=12)
+        meta_label.grid(row=1, column=2, sticky="ew", padx=12)
         self._attach_card_select(meta_label, exp["id"])
         command_label = tk.Label(
             card,
@@ -313,14 +333,15 @@ class PipeDLApp(tk.Tk):
             anchor="w",
             justify=tk.LEFT,
         )
-        command_label.grid(row=2, column=1, sticky="ew", padx=12, pady=(4, 10))
+        command_label.grid(row=2, column=2, sticky="ew", padx=12, pady=(4, 10))
         self._attach_card_select(command_label, exp["id"])
 
         actions = tk.Frame(card, bg=bg)
-        actions.grid(row=0, column=2, rowspan=3, sticky="e", padx=10, pady=10)
+        actions.grid(row=0, column=3, rowspan=3, sticky="e", padx=10, pady=10)
         self._add_card_actions(actions, exp, queued_ids, queue_paused)
         self.card_widgets[exp["id"]] = {
             "card": card,
+            "handle": handle,
             "stripe": stripe,
             "header": header,
             "status_label": status_label,
@@ -331,8 +352,201 @@ class PipeDLApp(tk.Tk):
             "status": exp["status"],
             "selected": selected,
             "queue_paused": queue_paused,
-            "top_available": exp["id"] in queued_ids and queued_ids.index(exp["id"]) != 0,
         }
+
+    def _create_drag_handle(self, parent: tk.Widget, exp: dict, bg: str) -> tk.Label:
+        is_draggable = exp["status"] == "queued"
+        handle = tk.Label(
+            parent,
+            text="☰",
+            bg=bg,
+            fg=self.colors["muted"] if is_draggable else self.colors["border"],
+            font=("Segoe UI", 14, "bold"),
+            width=2,
+            cursor="fleur" if is_draggable else "arrow",
+        )
+        if is_draggable:
+            handle.bind("<ButtonPress-1>", lambda event, exp_id=exp["id"]: self._drag_start(event, exp_id))
+            handle.bind("<B1-Motion>", self._drag_motion)
+            handle.bind("<ButtonRelease-1>", self._drag_release)
+        return handle
+
+    def _drag_start(self, _event, exp_id: str) -> None:
+        exp = self.storage.get_experiment(exp_id)
+        if not exp or exp["status"] != "queued":
+            return
+        self.dragging_exp_id = exp_id
+        self.selected_id = exp_id
+        refs = self.card_widgets.get(exp_id)
+        if refs:
+            source_y = refs["card"].winfo_rooty()
+            refs["card"].configure(bg=self.colors["panel_alt"], highlightbackground=self.colors["queued"], highlightthickness=2)
+            refs["handle"].configure(fg=self.colors["queued"])
+            self._show_drag_preview(exp, refs["card"])
+            self._show_drag_placeholder(refs["card"])
+            self.current_drop_position = self._queued_drop_position(source_y, exp_id)
+            if self.current_drop_position is not None:
+                self._move_drag_placeholder(self.current_drop_position, exp_id)
+        self.update_details()
+
+    def _drag_motion(self, event) -> None:
+        if not self.dragging_exp_id:
+            return
+        if self._event_in_queue_region(event):
+            self._auto_scroll_during_drag(event.y_root)
+        self._move_drag_preview(event.x_root, event.y_root)
+        position = self._queued_drop_position(event.y_root, self.dragging_exp_id)
+        if position is not None:
+            self.current_drop_position = position
+            if position != self.drag_placeholder_position:
+                self._move_drag_placeholder(position, self.dragging_exp_id)
+        refs = self.card_widgets.get(self.dragging_exp_id)
+        if refs:
+            refs["card"].configure(bg=self.colors["panel_alt"], highlightbackground=self.colors["queued"], highlightthickness=2)
+
+    def _drag_release(self, event) -> None:
+        if not self.dragging_exp_id:
+            return
+        exp_id = self.dragging_exp_id
+        self.dragging_exp_id = None
+        position = self.current_drop_position or self._queued_drop_position(event.y_root, exp_id)
+        self._destroy_drag_visuals()
+        self.current_drop_position = None
+        if position is not None:
+            self.storage.move_queued(exp_id, position)
+        self._clear_cards()
+        self.refresh()
+
+    def _show_drag_preview(self, exp: dict, source_card: tk.Widget) -> None:
+        self._destroy_drag_preview()
+        preview = tk.Toplevel(self)
+        preview.overrideredirect(True)
+        try:
+            preview.attributes("-topmost", True)
+            preview.attributes("-alpha", 0.92)
+        except tk.TclError:
+            pass
+        width = max(320, min(source_card.winfo_width(), 520))
+        frame = tk.Frame(preview, bg=self.colors["selected"], highlightthickness=2, highlightbackground=self.colors["queued"])
+        frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(
+            frame,
+            text=exp["name"],
+            bg=self.colors["selected"],
+            fg=self.colors["text"],
+            font=("Segoe UI", 12, "bold"),
+            anchor="w",
+        ).pack(fill=tk.X, padx=12, pady=(10, 2))
+        tk.Label(
+            frame,
+            text=self._command_hint(exp),
+            bg=self.colors["selected"],
+            fg=self.colors["muted"],
+            font=("Segoe UI", 9),
+            anchor="w",
+        ).pack(fill=tk.X, padx=12, pady=(0, 10))
+        preview.geometry(f"{width}x72+{source_card.winfo_rootx()+16}+{source_card.winfo_rooty()+8}")
+        self.drag_preview = preview
+
+    def _move_drag_preview(self, x_root: int, y_root: int) -> None:
+        if not self.drag_preview:
+            return
+        self.drag_preview.geometry(f"+{x_root + 14}+{y_root + 10}")
+
+    def _destroy_drag_preview(self) -> None:
+        if self.drag_preview:
+            self.drag_preview.destroy()
+            self.drag_preview = None
+
+    def _show_drag_placeholder(self, source_card: tk.Widget) -> None:
+        self._destroy_drag_placeholder()
+        height = max(source_card.winfo_height(), 72)
+        placeholder = tk.Frame(
+            self.cards_frame,
+            bg=self.colors["selected"],
+            height=height,
+            highlightthickness=2,
+            highlightbackground=self.colors["queued"],
+        )
+        placeholder.pack_propagate(False)
+        tk.Label(
+            placeholder,
+            text="Drop here",
+            bg=self.colors["selected"],
+            fg=self.colors["queued"],
+            font=("Segoe UI", 10, "bold"),
+        ).pack(expand=True)
+        placeholder.pack(fill=tk.X, pady=(0, 10), before=source_card)
+        source_card.pack_forget()
+        self.drag_placeholder = placeholder
+
+    def _move_drag_placeholder(self, position: int, dragged_id: str) -> None:
+        if not self.drag_placeholder:
+            return
+        queued = [exp for exp in self.storage.list_experiments() if exp["status"] == "queued" and exp["id"] != dragged_id]
+        self.drag_placeholder.pack_forget()
+        self.drag_placeholder_position = position
+        if not queued:
+            self.drag_placeholder.pack(fill=tk.X, pady=(0, 10))
+            return
+        if position <= 1:
+            refs = self.card_widgets.get(queued[0]["id"])
+            target = refs["card"] if refs else None
+            if target and target.winfo_manager():
+                self.drag_placeholder.pack(fill=tk.X, pady=(0, 10), before=target)
+            else:
+                self.drag_placeholder.pack(fill=tk.X, pady=(0, 10))
+        elif position > len(queued):
+            refs = self.card_widgets.get(queued[-1]["id"])
+            target = refs["card"] if refs else None
+            if target and target.winfo_manager():
+                self.drag_placeholder.pack(fill=tk.X, pady=(0, 10), after=target)
+            else:
+                self.drag_placeholder.pack(fill=tk.X, pady=(0, 10))
+        else:
+            refs = self.card_widgets.get(queued[position - 1]["id"])
+            target = refs["card"] if refs else None
+            if target and target.winfo_manager():
+                self.drag_placeholder.pack(fill=tk.X, pady=(0, 10), before=target)
+            else:
+                self.drag_placeholder.pack(fill=tk.X, pady=(0, 10))
+
+    def _destroy_drag_placeholder(self) -> None:
+        if self.drag_placeholder:
+            self.drag_placeholder.destroy()
+            self.drag_placeholder = None
+        self.drag_placeholder_position = None
+
+    def _destroy_drag_visuals(self) -> None:
+        self._destroy_drag_preview()
+        self._destroy_drag_placeholder()
+
+    def _queued_drop_position(self, y_root: int, dragged_id: str) -> int | None:
+        queued = [exp for exp in self.storage.list_experiments() if exp["status"] == "queued"]
+        if not any(exp["id"] == dragged_id for exp in queued):
+            return None
+        position = 1
+        for exp in queued:
+            if exp["id"] == dragged_id:
+                continue
+            refs = self.card_widgets.get(exp["id"])
+            if not refs:
+                continue
+            card = refs["card"]
+            midpoint = card.winfo_rooty() + card.winfo_height() / 2
+            if y_root < midpoint:
+                return position
+            position += 1
+        return position
+
+    def _auto_scroll_during_drag(self, y_root: int) -> None:
+        top = self.queue_region.winfo_rooty()
+        bottom = top + self.queue_region.winfo_height()
+        margin = 36
+        if y_root < top + margin:
+            self.card_canvas.yview_scroll(-2, "units")
+        elif y_root > bottom - margin:
+            self.card_canvas.yview_scroll(2, "units")
 
     def _update_card(self, exp: dict, index: int, queued_ids: list[str], queue_paused: bool) -> None:
         refs = self.card_widgets.get(exp["id"])
@@ -343,7 +557,12 @@ class PipeDLApp(tk.Tk):
         selected = exp["id"] == self.selected_id
         bg = self.colors["selected"] if selected else self.colors["panel"]
         border = self._status_color(exp["status"]) if selected or exp["status"] == "running" else self.colors["border"]
-        refs["card"].configure(bg=bg, highlightbackground=border)
+        refs["card"].configure(bg=bg, highlightbackground=border, highlightthickness=1)
+        refs["handle"].configure(
+            bg=bg,
+            fg=self.colors["muted"] if exp["status"] == "queued" else self.colors["border"],
+            cursor="fleur" if exp["status"] == "queued" else "arrow",
+        )
         refs["stripe"].configure(bg=self._status_color(exp["status"]))
         refs["header"].configure(bg=bg)
         refs["status_label"].configure(text=self._status_label(exp["status"]), bg=self._status_color(exp["status"]))
@@ -352,17 +571,14 @@ class PipeDLApp(tk.Tk):
         refs["command_label"].configure(text=self._command_hint(exp), bg=bg)
         refs["actions"].configure(bg=bg)
 
-        top_available = exp["id"] in queued_ids and queued_ids.index(exp["id"]) != 0
         actions_changed = (
             refs["status"] != exp["status"]
             or refs["queue_paused"] != queue_paused
-            or refs["top_available"] != top_available
         )
         if actions_changed:
             self._add_card_actions(refs["actions"], exp, queued_ids, queue_paused)
             refs["status"] = exp["status"]
             refs["queue_paused"] = queue_paused
-            refs["top_available"] = top_available
         refs["selected"] = selected
 
     def _add_card_actions(self, parent: tk.Frame, exp: dict, queued_ids: list[str], queue_paused: bool) -> None:
@@ -382,18 +598,12 @@ class PipeDLApp(tk.Tk):
                 self._action_button(parent, "Continue Queue", self.resume_queue)
             else:
                 self._action_button(parent, "Pause Queue", self.pause_queue)
-            row = tk.Frame(parent, bg=parent["bg"])
-            row.pack(side=tk.TOP, fill=tk.X, pady=2)
-            self._action_button(row, "Up", lambda exp_id=exp["id"]: self.shift_experiment(exp_id, -1), side=tk.LEFT, fill=None, padx=(0, 3))
-            self._action_button(row, "Down", lambda exp_id=exp["id"]: self.shift_experiment(exp_id, 1), side=tk.LEFT, fill=None, padx=(3, 0))
             self._action_button(parent, "Cancel", lambda exp_id=exp["id"]: self.cancel_experiment(exp_id))
             self._action_button(parent, "Delete", lambda exp_id=exp["id"]: self.delete_experiment(exp_id))
         elif status in {"failed", "stopped", "cancelled", "succeeded"}:
             self._action_button(parent, "Retry", lambda exp_id=exp["id"]: self.retry_experiment(exp_id))
             self._action_button(parent, "Select", lambda exp_id=exp["id"]: self.select_experiment(exp_id))
             self._action_button(parent, "Delete", lambda exp_id=exp["id"]: self.delete_experiment(exp_id))
-        if status == "queued" and exp["id"] in queued_ids and queued_ids.index(exp["id"]) != 0:
-            self._action_button(parent, "Top", lambda exp_id=exp["id"]: self.move_experiment(exp_id, 1))
 
     def _action_button(self, parent: tk.Widget, text: str, command, side=tk.TOP, fill=tk.X, padx=0) -> ttk.Button:
         button = ttk.Button(parent, text=text, command=command)
@@ -492,15 +702,6 @@ class PipeDLApp(tk.Tk):
         self.storage.move_queued(exp_id, position)
         self.refresh()
 
-    def shift_experiment(self, exp_id: str, delta: int) -> None:
-        queued = [exp for exp in self.storage.list_experiments() if exp["status"] == "queued"]
-        ids = [exp["id"] for exp in queued]
-        if exp_id not in ids:
-            return
-        new_pos = ids.index(exp_id) + 1 + delta
-        self.storage.move_queued(exp_id, new_pos)
-        self.refresh()
-
     def _resize_cards_window(self, event) -> None:
         self.card_canvas.itemconfigure(self.cards_window, width=event.width)
 
@@ -559,7 +760,99 @@ class PipeDLApp(tk.Tk):
             return text
         return text[: max_len - 1] + "..."
 
+    def check_updates_on_startup(self) -> None:
+        if self._closing:
+            return
+        thread = threading.Thread(target=self._check_updates_worker, daemon=True)
+        thread.start()
+
+    def _check_updates_worker(self) -> None:
+        try:
+            info = check_for_update(__version__)
+        except Exception:
+            return
+        if info:
+            self._run_on_ui(lambda update=info: self._prompt_update(update))
+
+    def _prompt_update(self, info: UpdateInfo) -> None:
+        confirmed = messagebox.askyesno(
+            "PipeDL Update",
+            "PipeDL {version} is available.\n\nDownload and install it now?".format(version=info.version),
+        )
+        if confirmed:
+            self._start_update_download(info)
+
+    def _start_update_download(self, info: UpdateInfo) -> None:
+        self._show_update_dialog(info)
+        thread = threading.Thread(target=self._download_update_worker, args=(info,), daemon=True)
+        thread.start()
+
+    def _show_update_dialog(self, info: UpdateInfo) -> None:
+        self._close_update_dialog()
+        dialog = tk.Toplevel(self)
+        dialog.title("Updating PipeDL")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+        dialog.configure(bg=self.colors["panel"])
+        dialog.columnconfigure(0, weight=1)
+        self.update_label_var.set(f"Downloading PipeDL {info.version}...")
+        ttk.Label(dialog, textvariable=self.update_label_var, style="Panel.TLabel").grid(
+            row=0, column=0, sticky="ew", padx=18, pady=(16, 8)
+        )
+        progress = ttk.Progressbar(dialog, variable=self.update_progress_var, maximum=100, length=360)
+        progress.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 16))
+        self.update_progress_var.set(0)
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + max(0, (self.winfo_width() - dialog.winfo_width()) // 2)
+        y = self.winfo_rooty() + max(0, (self.winfo_height() - dialog.winfo_height()) // 2)
+        dialog.geometry(f"+{x}+{y}")
+        self.update_dialog = dialog
+
+    def _download_update_worker(self, info: UpdateInfo) -> None:
+        try:
+            installer_path = download_update(info, progress_callback=self._update_download_progress)
+        except Exception as exc:
+            self._run_on_ui(lambda error=exc: self._show_update_error(error))
+            return
+        self._run_on_ui(lambda path=installer_path: self._install_update(path))
+
+    def _update_download_progress(self, downloaded: int, total: int) -> None:
+        if total <= 0:
+            return
+        percent = min(100.0, downloaded / total * 100)
+        self._run_on_ui(lambda value=percent: self.update_progress_var.set(value))
+
+    def _install_update(self, installer_path) -> None:
+        self.update_label_var.set("Starting installer...")
+        self.update_progress_var.set(100)
+        try:
+            launch_installer(installer_path)
+        except Exception as exc:
+            self._show_update_error(exc)
+            return
+        self.on_close()
+
+    def _show_update_error(self, exc: Exception) -> None:
+        self._close_update_dialog()
+        messagebox.showerror("PipeDL Update", f"Could not install the update.\n\n{exc}")
+
+    def _close_update_dialog(self) -> None:
+        if self.update_dialog:
+            self.update_dialog.destroy()
+            self.update_dialog = None
+
+    def _run_on_ui(self, callback) -> None:
+        if self._closing:
+            return
+        try:
+            self.after(0, callback)
+        except (RuntimeError, tk.TclError):
+            pass
+
     def on_close(self) -> None:
+        self._closing = True
+        self._close_update_dialog()
         if self._refresh_after_id:
             self.after_cancel(self._refresh_after_id)
         self.api_server.stop()

@@ -1,7 +1,7 @@
 #define MyAppName "PipeDL"
 #define MyAppVersion GetEnv("PIPEDL_VERSION")
 #if MyAppVersion == ""
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #endif
 #define MyAppPublisher "PipeDL"
 #define MyAppExeName "PipeDL.exe"

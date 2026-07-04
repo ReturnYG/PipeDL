@@ -28,6 +28,8 @@ The installer includes:
 - `PipeDL.exe`: the desktop application
 - `pipedl.exe`: the CLI used to register and control experiments
 
+On startup, the installed Windows app checks GitHub Releases for a newer stable version. If an update is available, PipeDL asks before downloading `PipeDL-Setup-<version>.exe` and starting the installer automatically.
+
 Runtime data is stored under:
 
 ```text
@@ -52,11 +54,17 @@ If PipeDL is still running, the uninstaller attempts to stop `PipeDL.exe` and `p
 
 Start `PipeDL` from the Start Menu. The main window displays experiments as queue cards.
 
+To disable startup update checks, set the environment variable:
+
+```powershell
+setx PIPEDL_DISABLE_UPDATE_CHECK 1
+```
+
 Card actions depend on experiment status:
 
 - Running: `Pause`, `Stop`, `Delete`
 - Paused: `Continue`, `Stop`, `Delete`
-- Queued: `Pause Queue` / `Continue Queue`, `Up`, `Down`, `Cancel`, `Delete`, `Top`
+- Queued: drag the left `☰` handle to reorder; `Pause Queue` / `Continue Queue`, `Cancel`, `Delete`
 - Finished: `Retry`, `Select`, `Delete`
 
 Selecting a card opens its full command details and live stdout/stderr logs on the right.
