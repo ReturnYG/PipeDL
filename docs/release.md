@@ -29,8 +29,8 @@ The uninstaller removes the installed files, Start Menu shortcuts, the user PATH
 Push a version tag:
 
 ```bash
-git tag v0.1.7
-git push origin v0.1.7
+git tag v0.1.8
+git push origin v0.1.8
 ```
 
 GitHub Actions will build and upload:
@@ -45,11 +45,11 @@ The desktop app uses the latest non-draft, non-prerelease GitHub Release for sta
 Install Python 3.11 and Inno Setup, then run:
 
 ```powershell
-.\scripts\build_windows.ps1 -Version 0.1.7
+.\scripts\build_windows.ps1 -Version 0.1.8
 ```
 
 To build only the executable files without an installer:
 
 ```powershell
-.\scripts\build_windows.ps1 -Version 0.1.7 -SkipInstaller
+.\scripts\build_windows.ps1 -Version 0.1.8 -SkipInstaller
 ```

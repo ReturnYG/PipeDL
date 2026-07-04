@@ -159,9 +159,11 @@ class PipeDLApp(tk.Tk):
         detail = tk.Frame(right, bg=self.colors["panel"], highlightthickness=1, highlightbackground=self.colors["border"])
         detail.grid(row=0, column=0, sticky="ew")
         detail.columnconfigure(0, weight=1)
-        ttk.Label(detail, textvariable=self.detail_var, justify=tk.LEFT, style="Panel.TLabel").grid(
+        self.detail_label = ttk.Label(detail, textvariable=self.detail_var, justify=tk.LEFT, style="Panel.TLabel")
+        self.detail_label.grid(
             row=0, column=0, sticky="ew", padx=12, pady=10
         )
+        detail.bind("<Configure>", self._resize_detail_label)
         tabs = ttk.Notebook(right)
         tabs.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
         self.stdout_text = tk.Text(tabs, wrap=tk.NONE, height=20, bg="#0f172a", fg="#dbeafe", insertbackground="#dbeafe")
@@ -629,11 +631,7 @@ class PipeDLApp(tk.Tk):
         exp = self.storage.get_experiment(self.selected_id)
         if not exp:
             return
-        self.detail_var.set(
-            "ID: {id}\nStatus: {status} | PID: {pid} | Exit: {exit_code}\nCWD: {cwd}\nCommand: {command}".format(
-                **exp
-            )
-        )
+        self.detail_var.set(self._detail_text(exp))
         self.stdout_text.delete("1.0", tk.END)
         self.stdout_text.insert(tk.END, read_tail(exp["stdout_path"]))
         self.stderr_text.delete("1.0", tk.END)
@@ -704,6 +702,9 @@ class PipeDLApp(tk.Tk):
     def _resize_cards_window(self, event) -> None:
         self.card_canvas.itemconfigure(self.cards_window, width=event.width)
         self._sync_card_scrollregion()
+
+    def _resize_detail_label(self, event) -> None:
+        self.detail_label.configure(wraplength=max(320, event.width - 24))
 
     def _attach_card_select(self, widget: tk.Widget, exp_id: str) -> None:
         widget.bind("<Button-1>", lambda _event, item_id=exp_id: self.select_experiment(item_id), add="+")
@@ -776,6 +777,31 @@ class PipeDLApp(tk.Tk):
             parts.append(f"exit: {exp['exit_code']}")
         parts.append(f"by: {exp['created_by']}")
         return "   ".join(parts)
+
+    def _detail_text(self, exp: dict) -> str:
+        display_index = self._display_index(exp["id"])
+        lines = [
+            f"Name: {exp['name']}",
+            f"ID: {exp['id']}",
+            f"Display #: {display_index} | Queue position: {exp['queue_position']}",
+            f"Status: {exp['status']} | PID: {exp['pid']} | Process group: {exp['process_group']} | Exit: {exp['exit_code']}",
+            f"Shell: {exp['shell']}",
+            f"CWD: {exp['cwd']}",
+            f"Created by: {exp['created_by']}",
+            f"Tags: {exp.get('tags') or ''}",
+            f"Notes: {exp.get('notes') or ''}",
+            f"Created: {exp['created_at']} | Started: {exp['started_at']} | Ended: {exp['ended_at']} | Updated: {exp['updated_at']}",
+            f"stdout: {exp['stdout_path']}",
+            f"stderr: {exp['stderr_path']}",
+            f"Command: {exp['command']}",
+        ]
+        return "\n".join(lines)
+
+    def _display_index(self, exp_id: str) -> int:
+        for index, exp in enumerate(self.storage.list_experiments(), start=1):
+            if exp["id"] == exp_id:
+                return index
+        return 0
 
     def _command_hint(self, exp: dict) -> str:
         tags = exp.get("tags") or ""
