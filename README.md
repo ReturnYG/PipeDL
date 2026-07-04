@@ -26,7 +26,7 @@ Install PipeDL from GitHub Releases:
 The installer includes:
 
 - `PipeDL.exe`: the desktop application
-- `pipedl.exe`: the CLI used to register and control experiments
+- `pipedl_cli.exe`: the CLI used to register and control experiments
 
 On startup, the installed Windows app checks GitHub Releases for a newer stable version. If an update is available, PipeDL asks before downloading `PipeDL-Setup-<version>.exe` and starting the installer automatically.
 
@@ -45,10 +45,10 @@ The uninstaller removes:
 
 - The installed application files
 - Start Menu shortcuts
-- The `pipedl` PATH entry
+- The PipeDL install directory PATH entry
 - Local database and experiment logs under `%LOCALAPPDATA%\PipeDL`
 
-If PipeDL is still running, the uninstaller attempts to stop `PipeDL.exe` and `pipedl.exe` before removing files.
+If PipeDL is still running, the uninstaller attempts to stop `PipeDL.exe` and `pipedl_cli.exe` before removing files.
 
 ## Desktop Usage
 
@@ -73,24 +73,24 @@ Use `Demo x5` to add five simulated training experiments. Each demo runs 50 epoc
 
 ## Add Experiments
 
-Start the PipeDL desktop app first, then register experiments with `pipedl.exe`.
+Start the PipeDL desktop app first, then register experiments with `pipedl_cli.exe`.
 
 PowerShell example:
 
 ```powershell
-pipedl run --name train-ps --shell powershell --cwd D:\project -- python train.py
+pipedl_cli run --name train-ps --shell powershell --cwd D:\project -- python train.py
 ```
 
 WSL example:
 
 ```powershell
-pipedl run --name train-wsl --shell wsl --cwd /mnt/d/project -- python train.py --config config.yaml
+pipedl_cli run --name train-wsl --shell wsl --cwd /mnt/d/project -- python train.py --config config.yaml
 ```
 
 Bash example:
 
 ```bash
-pipedl run --name train-bash --shell bash --cwd /mnt/d/project -- python train.py --config config.yaml
+pipedl_cli run --name train-bash --shell bash --cwd /mnt/d/project -- python train.py --config config.yaml
 ```
 
 `--name` is recommended but optional. If omitted or empty, PipeDL assigns names such as `Exp.01`, `Exp.02`, and so on.
@@ -98,16 +98,16 @@ pipedl run --name train-bash --shell bash --cwd /mnt/d/project -- python train.p
 ## CLI Commands
 
 ```bash
-pipedl status
-pipedl list
-pipedl demo
-pipedl stop <experiment_id>
-pipedl cancel <experiment_id>
-pipedl delete <experiment_id>
-pipedl retry <experiment_id>
-pipedl move <experiment_id> <position>
-pipedl pause
-pipedl resume
+pipedl_cli status
+pipedl_cli list
+pipedl_cli demo
+pipedl_cli stop <experiment_id>
+pipedl_cli cancel <experiment_id>
+pipedl_cli delete <experiment_id>
+pipedl_cli retry <experiment_id>
+pipedl_cli move <experiment_id> <position>
+pipedl_cli pause
+pipedl_cli resume
 ```
 
 ## Agent Integration
@@ -115,7 +115,7 @@ pipedl resume
 AI agents and scripts should register long-running experiments with PipeDL instead of launching them directly.
 
 ```bash
-pipedl run \
+pipedl_cli run \
   --name agent-exp-001 \
   --shell bash \
   --cwd /mnt/d/project \

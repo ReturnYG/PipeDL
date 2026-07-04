@@ -29,7 +29,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="pipedl",
+    name="pipedl_cli",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

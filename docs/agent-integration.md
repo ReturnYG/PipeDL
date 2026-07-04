@@ -2,7 +2,7 @@
 
 PipeDL accepts experiment registrations from other agents through two stable entry points:
 
-1. CLI registration with `pipedl run`
+1. CLI registration with `pipedl_cli run`
 2. Localhost-only HTTP registration on `127.0.0.1:48127`
 
 The desktop app must be running because it owns the queue scheduler and process manager.
@@ -22,7 +22,7 @@ check PipeDL status
 ## CLI Registration
 
 ```bash
-pipedl run \
+pipedl_cli run \
   --name <name> \
   --shell <bash|wsl|powershell|cmd> \
   --cwd <working-directory> \
@@ -35,7 +35,7 @@ pipedl run \
 Example:
 
 ```bash
-pipedl run \
+pipedl_cli run \
   --name shhb_moe_lr1e4_gpu0 \
   --shell bash \
   --cwd /mnt/d/Dev/project/crowdcounting_moe \
@@ -63,8 +63,8 @@ curl -s http://127.0.0.1:48127/experiments \
 ## Polling
 
 ```bash
-pipedl status
-pipedl list
+pipedl_cli status
+pipedl_cli list
 ```
 
 HTTP:

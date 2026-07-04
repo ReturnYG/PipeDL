@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.3",
+    [string]$Version = "0.1.4",
     [switch]$SkipInstaller
 )
 
@@ -22,7 +22,7 @@ pyinstaller packaging/pyinstaller/pipedl-cli.spec --noconfirm --clean
 pyinstaller packaging/pyinstaller/PipeDL.spec --noconfirm --clean
 
 $GuiExe = Join-Path $Root "dist\PipeDL\PipeDL.exe"
-$CliExe = Join-Path $Root "dist\pipedl.exe"
+$CliExe = Join-Path $Root "dist\pipedl_cli.exe"
 if (-not (Test-Path $GuiExe)) {
     throw "Missing GUI executable: $GuiExe"
 }
@@ -47,7 +47,7 @@ if (-not $SkipInstaller) {
 
 Write-Host "Build complete."
 Write-Host "GUI app: dist/PipeDL/PipeDL.exe"
-Write-Host "CLI app: dist/pipedl.exe"
+Write-Host "CLI app: dist/pipedl_cli.exe"
 if (-not $SkipInstaller) {
     Write-Host "Installer: dist/installer/PipeDL-Setup-$Version.exe"
 }

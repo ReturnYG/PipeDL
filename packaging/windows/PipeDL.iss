@@ -1,7 +1,7 @@
 #define MyAppName "PipeDL"
 #define MyAppVersion GetEnv("PIPEDL_VERSION")
 #if MyAppVersion == ""
-#define MyAppVersion "0.1.3"
+#define MyAppVersion "0.1.4"
 #endif
 #define SourceRoot GetEnv("PIPEDL_SOURCE_ROOT")
 #if SourceRoot == ""
@@ -29,12 +29,12 @@ ArchitecturesInstallIn64BitMode=x64compatible
 ChangesEnvironment=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
 CloseApplications=yes
-CloseApplicationsFilter=PipeDL.exe,pipedl.exe
+CloseApplicationsFilter=PipeDL.exe,pipedl_cli.exe
 
 [Files]
 Source: "{#SourceRoot}\dist\PipeDL\PipeDL.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\dist\PipeDL\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#SourceRoot}\dist\pipedl.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\dist\pipedl_cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\PipeDL"; Filename: "{app}\{#MyAppExeName}"
@@ -48,7 +48,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch PipeDL"; Flags: nowait p
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM PipeDL.exe /F /T >nul 2>nul"; Flags: runhidden; RunOnceId: "StopPipeDL"
-Filename: "{cmd}"; Parameters: "/C taskkill /IM pipedl.exe /F /T >nul 2>nul"; Flags: runhidden; RunOnceId: "StopPipeDLCLI"
+Filename: "{cmd}"; Parameters: "/C taskkill /IM pipedl_cli.exe /F /T >nul 2>nul"; Flags: runhidden; RunOnceId: "StopPipeDLCLI"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\PipeDL"

@@ -7,7 +7,7 @@ PipeDL is the experiment queue owner for this workspace. If you are an AI agent 
 1. Check that the PipeDL desktop app is running:
 
    ```bash
-   pipedl status
+   pipedl_cli status
    ```
 
 2. If the app is not running, tell the user to start it:
@@ -19,7 +19,7 @@ PipeDL is the experiment queue owner for this workspace. If you are an AI agent 
 3. Register the experiment through the CLI:
 
    ```bash
-   pipedl run \
+   pipedl_cli run \
      --name <short-experiment-name> \
      --shell <bash|wsl|powershell|cmd> \
      --cwd <working-directory> \
@@ -38,7 +38,7 @@ PipeDL is the experiment queue owner for this workspace. If you are an AI agent 
 Bash or WSL-side Python:
 
 ```bash
-pipedl run \
+pipedl_cli run \
   --name train-baseline \
   --shell bash \
   --cwd /mnt/d/project \
@@ -49,7 +49,7 @@ pipedl run \
 Windows PowerShell:
 
 ```bash
-pipedl run \
+pipedl_cli run \
   --name train-windows \
   --shell powershell \
   --cwd D:\project \
@@ -60,7 +60,7 @@ pipedl run \
 Explicit WSL runner from Windows:
 
 ```bash
-pipedl run \
+pipedl_cli run \
   --name train-wsl \
   --shell wsl \
   --cwd /mnt/d/project \

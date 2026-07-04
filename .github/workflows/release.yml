@@ -42,7 +42,7 @@ jobs:
       - name: Package portable zip
         shell: pwsh
         run: |
-          Compress-Archive -Path dist\PipeDL,dist\pipedl.exe -DestinationPath "dist\PipeDL-portable-$env:PIPEDL_VERSION.zip"
+          Compress-Archive -Path dist\PipeDL,dist\pipedl_cli.exe -DestinationPath "dist\PipeDL-portable-$env:PIPEDL_VERSION.zip"
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
@@ -62,4 +62,4 @@ jobs:
             dist/installer/*.exe `
             dist/*.zip `
             --title "PipeDL $env:PIPEDL_VERSION" `
-            --notes "Download PipeDL-Setup-$env:PIPEDL_VERSION.exe to install PipeDL on Windows. The portable zip is provided for users who prefer not to run an installer."
+            --notes "Download PipeDL-Setup-$env:PIPEDL_VERSION.exe to install PipeDL on Windows. The CLI executable is pipedl_cli.exe. The portable zip is provided for users who prefer not to run an installer."
