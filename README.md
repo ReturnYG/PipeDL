@@ -1,19 +1,21 @@
 # PipeDL
 
-PipeDL is a local desktop program for managing deep learning experiments launched from CLI commands. It provides a queue, process monitoring, live logs, and a CLI/API entry point for users or AI agents.
+PipeDL is a local desktop application for managing deep learning experiments launched from command-line commands. It provides a visual experiment queue, process controls, live logs, and a local interface for users, scripts, and AI agents to register experiments.
 
-This first version uses only Python's standard library:
+## Features
 
-- Tkinter desktop GUI with card-style experiment rows
-- SQLite storage
-- Localhost-only HTTP API
-- CLI command registration
-- Serial queue scheduler
-- Bash, WSL, PowerShell, and CMD runners
+- Card-style desktop queue for experiments
+- Automatic serial scheduling: the next queued experiment starts when the current one finishes
+- Live stdout/stderr log viewer
+- Pause, continue, stop, delete, retry, and reorder operations
+- Retry for finished experiments, including succeeded, failed, stopped, and cancelled runs
+- Bash, WSL, PowerShell, and CMD command runners
+- Local CLI and localhost API for scripts and AI agents
+- SQLite-backed local history and per-experiment log files
 
-## Install On Windows
+## Install
 
-Most users should install PipeDL from GitHub Releases:
+Install PipeDL from GitHub Releases:
 
 1. Open the project's GitHub page.
 2. Go to `Releases`.
@@ -23,106 +25,76 @@ Most users should install PipeDL from GitHub Releases:
 
 The installer includes:
 
-- `PipeDL.exe`: the desktop GUI app
-- `pipedl.exe`: the CLI used by agents or scripts to register commands with the running app
+- `PipeDL.exe`: the desktop application
+- `pipedl.exe`: the CLI used to register and control experiments
 
-Runtime data is stored in the user's application data directory by default:
+Runtime data is stored under:
 
 ```text
 %LOCALAPPDATA%\PipeDL\.pipedl\pipedl.db
 %LOCALAPPDATA%\PipeDL\runs\<experiment_id>\
 ```
 
-Advanced users can override this with `PIPEDL_ROOT`, `PIPEDL_STATE_DIR`, or `PIPEDL_RUNS_DIR`.
+## Desktop Usage
 
-## Run From Source
+Start `PipeDL` from the Start Menu. The main window displays experiments as queue cards.
 
-```bash
-python -m pipedl app
-```
+Card actions depend on experiment status:
 
-On Linux/WSL, the Python environment must include Tkinter. On Windows Python installs, Tkinter is usually included by default.
+- Running: `Pause`, `Stop`, `Delete`
+- Paused: `Continue`, `Stop`, `Delete`
+- Queued: `Pause Queue` / `Continue Queue`, `Up`, `Down`, `Cancel`, `Delete`, `Top`
+- Finished: `Retry`, `Select`, `Delete`
 
-The main window shows experiments as queue cards. Each card contains the status, command metadata, and action buttons:
+Selecting a card opens its full command details and live stdout/stderr logs on the right.
 
-- Running cards: `Pause`, `Stop`
-- Paused cards: `Continue`, `Stop`
-- Queued cards: `Pause Queue` / `Continue Queue`, `Up`, `Down`, `Cancel`, `Delete`, `Top`
-- Finished cards, including succeeded, failed, stopped, or cancelled experiments: `Retry`, `Select`, `Delete`
+Use `Demo x5` to add five simulated training experiments. Each demo runs 50 epochs with 60 seconds per epoch; the fourth demo intentionally fails so the retry flow can be tested.
 
-Selecting a card opens its command details and live stdout/stderr log panes on the right.
+## Add Experiments
 
-Use `Demo x5` to add five simulated training commands. Each demo command runs 50 epochs and sleeps 60 seconds per epoch, so the queue remains active long enough to observe pause, stop, delete, retry, and automatic next-task startup behavior. The fourth demo intentionally fails at the final export step so the retry flow is visible.
-
-Or, after installing the package in editable mode:
-
-```bash
-pip install -e .
-pipedl app
-```
-
-## Add An Experiment From CLI
-
-Start the desktop app first, then submit experiments:
-
-```bash
-python -m pipedl run --name test --shell bash --cwd . -- python -c "print('hello from PipeDL')"
-```
-
-`--name` is recommended but optional. If omitted or empty, PipeDL assigns `Exp.01`, `Exp.02`, and so on.
-
-WSL example:
-
-```bash
-python -m pipedl run --name train-wsl --shell wsl --cwd /mnt/d/project -- python train.py --config config.yaml
-```
+Start the PipeDL desktop app first, then register experiments with `pipedl.exe`.
 
 PowerShell example:
 
-```bash
-python -m pipedl run --name train-ps --shell powershell --cwd D:\project -- python train.py
+```powershell
+pipedl run --name train-ps --shell powershell --cwd D:\project -- python train.py
 ```
+
+WSL example:
+
+```powershell
+pipedl run --name train-wsl --shell wsl --cwd /mnt/d/project -- python train.py --config config.yaml
+```
+
+Bash example:
+
+```bash
+pipedl run --name train-bash --shell bash --cwd /mnt/d/project -- python train.py --config config.yaml
+```
+
+`--name` is recommended but optional. If omitted or empty, PipeDL assigns names such as `Exp.01`, `Exp.02`, and so on.
 
 ## CLI Commands
 
 ```bash
-PipeDL.exe
-pipedl.exe run --name exp001 --shell powershell --cwd D:\project -- python train.py
-pipedl.exe list
-pipedl.exe status
-pipedl.exe demo
-pipedl.exe stop <experiment_id>
-pipedl.exe cancel <experiment_id>
-pipedl.exe delete <experiment_id>
-pipedl.exe retry <experiment_id>
-pipedl.exe move <experiment_id> <position>
-pipedl.exe pause
-pipedl.exe resume
-```
-
-When running from source, use:
-
-```bash
-python -m pipedl app
-python -m pipedl run --name exp001 --shell bash --cwd . -- python train.py
-python -m pipedl list
-python -m pipedl status
-python -m pipedl demo
-python -m pipedl stop <experiment_id>
-python -m pipedl cancel <experiment_id>
-python -m pipedl delete <experiment_id>
-python -m pipedl retry <experiment_id>
-python -m pipedl move <experiment_id> <position>
-python -m pipedl pause
-python -m pipedl resume
+pipedl status
+pipedl list
+pipedl demo
+pipedl stop <experiment_id>
+pipedl cancel <experiment_id>
+pipedl delete <experiment_id>
+pipedl retry <experiment_id>
+pipedl move <experiment_id> <position>
+pipedl pause
+pipedl resume
 ```
 
 ## Agent Integration
 
-Other agents should register long-running experiments with PipeDL instead of launching them directly. The easiest path is the CLI:
+AI agents and scripts should register long-running experiments with PipeDL instead of launching them directly.
 
 ```bash
-python -m pipedl run \
+pipedl run \
   --name agent-exp-001 \
   --shell bash \
   --cwd /mnt/d/project \
@@ -130,15 +102,11 @@ python -m pipedl run \
   -- python train.py --config a.yaml --gpu 0
 ```
 
-Names are recommended for readability. If an agent omits the name, PipeDL will display the experiment as `Exp.01`, `Exp.02`, and so on.
-
 Agents can also submit experiments to the local API:
 
 ```http
 POST http://127.0.0.1:48127/experiments
 ```
-
-Body:
 
 ```json
 {
@@ -150,50 +118,4 @@ Body:
 }
 ```
 
-The desktop app must be running because it owns the scheduler and local API.
-
-For agent-facing rules and copyable prompts, see `AGENTS.md` and `docs/agent-integration.md`.
-
-## Project Layout
-
-```text
-pipedl/
-  app.py              Desktop GUI
-  api.py              Localhost HTTP API
-  cli.py              CLI entry point
-  config.py           Paths and app config
-  models.py           Shared constants and helpers
-  process_manager.py  Shell runners and process control
-  scheduler.py        Queue loop
-  storage.py          SQLite persistence
-```
-
-Runtime files are created under:
-
-```text
-%LOCALAPPDATA%\PipeDL\.pipedl\pipedl.db
-%LOCALAPPDATA%\PipeDL\runs\<experiment_id>\stdout.log
-%LOCALAPPDATA%\PipeDL\runs\<experiment_id>\stderr.log
-```
-
-## Build A Release
-
-Windows release builds are produced by GitHub Actions when a tag is pushed:
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The release workflow builds:
-
-- `PipeDL-Setup-<version>.exe`
-- `PipeDL-portable-<version>.zip`
-
-To build locally on Windows:
-
-```powershell
-.\scripts\build_windows.ps1 -Version 0.1.0
-```
-
-Install Inno Setup first if you want the `.exe` installer. Use `-SkipInstaller` to build only `PipeDL.exe` and `pipedl.exe`.
+The desktop app must be running because it owns the queue scheduler and process manager.
