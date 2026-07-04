@@ -28,7 +28,8 @@ CloseApplications=yes
 CloseApplicationsFilter=PipeDL.exe,pipedl.exe
 
 [Files]
-Source: "..\..\dist\PipeDL\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\dist\PipeDL\PipeDL.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\PipeDL\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\..\dist\pipedl.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]

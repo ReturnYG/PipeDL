@@ -18,8 +18,17 @@ if (Test-Path build) {
     Remove-Item build -Recurse -Force
 }
 
-pyinstaller packaging/pyinstaller/PipeDL.spec --noconfirm --clean
 pyinstaller packaging/pyinstaller/pipedl-cli.spec --noconfirm --clean
+pyinstaller packaging/pyinstaller/PipeDL.spec --noconfirm --clean
+
+$GuiExe = Join-Path $Root "dist\PipeDL\PipeDL.exe"
+$CliExe = Join-Path $Root "dist\pipedl.exe"
+if (-not (Test-Path $GuiExe)) {
+    throw "Missing GUI executable: $GuiExe"
+}
+if (-not (Test-Path $CliExe)) {
+    throw "Missing CLI executable: $CliExe"
+}
 
 if (-not $SkipInstaller) {
     $env:PIPEDL_VERSION = $Version
