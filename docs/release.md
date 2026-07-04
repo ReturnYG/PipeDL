@@ -22,6 +22,8 @@ pipedl status
 pipedl run --name exp001 --shell powershell --cwd D:\project -- python train.py
 ```
 
+The uninstaller removes the installed files, Start Menu shortcuts, the user PATH entry, and PipeDL runtime data under `%LOCALAPPDATA%\PipeDL`.
+
 ## Maintainer Release Flow
 
 Push a version tag:

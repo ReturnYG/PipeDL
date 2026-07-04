@@ -23,6 +23,9 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ChangesEnvironment=yes
+UninstallDisplayIcon={app}\{#MyAppExeName}
+CloseApplications=yes
+CloseApplicationsFilter=PipeDL.exe,pipedl.exe
 
 [Files]
 Source: "..\..\dist\PipeDL\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -38,6 +41,14 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; Value
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch PipeDL"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+Filename: "{cmd}"; Parameters: "/C taskkill /IM PipeDL.exe /F /T >nul 2>nul"; Flags: runhidden; RunOnceId: "StopPipeDL"
+Filename: "{cmd}"; Parameters: "/C taskkill /IM pipedl.exe /F /T >nul 2>nul"; Flags: runhidden; RunOnceId: "StopPipeDLCLI"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{localappdata}\PipeDL"
+Type: filesandordirs; Name: "{app}"
+
 [Code]
 function NeedsAddPath(Param: string): boolean;
 var
@@ -49,4 +60,37 @@ begin
     exit;
   end;
   Result := Pos(';' + Uppercase(Param) + ';', ';' + Uppercase(OrigPath) + ';') = 0;
+end;
+
+function RemovePathEntry(PathValue: string; Entry: string): string;
+var
+  Work: string;
+  Needle: string;
+begin
+  Work := ';' + PathValue + ';';
+  Needle := ';' + Entry + ';';
+  while Pos(Uppercase(Needle), Uppercase(Work)) > 0 do
+  begin
+    Delete(Work, Pos(Uppercase(Needle), Uppercase(Work)), Length(Needle) - 1);
+  end;
+  if Copy(Work, 1, 1) = ';' then
+    Delete(Work, 1, 1);
+  if Copy(Work, Length(Work), 1) = ';' then
+    Delete(Work, Length(Work), 1);
+  Result := Work;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  OrigPath: string;
+  NewPath: string;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    if RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OrigPath) then
+    begin
+      NewPath := RemovePathEntry(OrigPath, ExpandConstant('{app}'));
+      RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', NewPath);
+    end;
+  end;
 end;

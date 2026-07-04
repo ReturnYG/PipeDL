@@ -35,6 +35,19 @@ Runtime data is stored under:
 %LOCALAPPDATA%\PipeDL\runs\<experiment_id>\
 ```
 
+## Uninstall
+
+Uninstall PipeDL from Windows Settings or Control Panel.
+
+The uninstaller removes:
+
+- The installed application files
+- Start Menu shortcuts
+- The `pipedl` PATH entry
+- Local database and experiment logs under `%LOCALAPPDATA%\PipeDL`
+
+If PipeDL is still running, the uninstaller attempts to stop `PipeDL.exe` and `pipedl.exe` before removing files.
+
 ## Desktop Usage
 
 Start `PipeDL` from the Start Menu. The main window displays experiments as queue cards.
