@@ -16,6 +16,16 @@ class ManagedProcess:
     process_group: int | None
 
 
+def hidden_windows_subprocess_kwargs(new_process_group: bool = False) -> dict:
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startupinfo.wShowWindow = subprocess.SW_HIDE
+    creationflags = subprocess.CREATE_NO_WINDOW
+    if new_process_group:
+        creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+    return {"creationflags": creationflags, "startupinfo": startupinfo}
+
+
 def build_command(shell: str, command: str) -> list[str]:
     if shell == SHELL_BASH:
         return ["bash", "-lc", command]
@@ -53,7 +63,7 @@ def start_process(exp: dict) -> ManagedProcess:
     }
     process_group: int | None = None
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        kwargs.update(hidden_windows_subprocess_kwargs(new_process_group=True))
     else:
         kwargs["start_new_session"] = True
 
@@ -72,6 +82,7 @@ def stop_process(pid: int | None, process_group: int | None = None, timeout: flo
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            **hidden_windows_subprocess_kwargs(),
         )
         return
 
@@ -112,6 +123,7 @@ def suspend_process(pid: int | None, process_group: int | None = None) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            **hidden_windows_subprocess_kwargs(),
         )
         return
 
@@ -136,6 +148,7 @@ def resume_process(pid: int | None, process_group: int | None = None) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,
+            **hidden_windows_subprocess_kwargs(),
         )
         return
 
