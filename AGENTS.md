@@ -10,7 +10,13 @@ PipeDL is the experiment queue owner for this workspace. If you are an AI agent 
    pipedl_cli status
    ```
 
-2. If the app is not running, tell the user to start it:
+   If `pipedl_cli` is not found on Windows, try the installed CLI path:
+
+   ```powershell
+   $env:LOCALAPPDATA\Programs\PipeDL\pipedl_cli.exe status
+   ```
+
+2. If the app is not running or the local API is unavailable, tell the user to start the PipeDL desktop app. Do not start the experiment directly as a fallback.
 
    ```bash
    PipeDL
@@ -31,7 +37,7 @@ PipeDL is the experiment queue owner for this workspace. If you are an AI agent 
 
 4. Do not use `nohup`, background `&`, `setsid`, detached terminals, or direct long-running training commands unless the user explicitly asks to bypass PipeDL.
 
-5. After registration, report the returned experiment `id` to the user.
+5. After registration, parse the JSON response and report the returned experiment `id` to the user.
 
 ## Examples
 
