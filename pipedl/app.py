@@ -6,7 +6,7 @@ from tkinter import messagebox, ttk
 
 from . import __version__
 from .api import LocalApiServer
-from .config import DEFAULT_HOST, DEFAULT_PORT, get_paths
+from .config import AppPaths, get_host, get_paths, get_port, get_profile
 from .demo import demo_experiment
 from .models import ExperimentCreate, SHELL_BASH, SUPPORTED_SHELLS
 from .scheduler import Scheduler
@@ -15,13 +15,27 @@ from .updater import UpdateInfo, check_for_update, download_update, launch_insta
 
 
 class PipeDLApp(tk.Tk):
-    def __init__(self, storage: Storage, scheduler: Scheduler, api_server: LocalApiServer):
+    def __init__(
+        self,
+        storage: Storage,
+        scheduler: Scheduler,
+        api_server: LocalApiServer,
+        paths: AppPaths,
+        host: str,
+        port: int,
+        profile: str,
+    ):
         super().__init__()
         self.storage = storage
         self.scheduler = scheduler
         self.api_server = api_server
+        self.paths = paths
+        self.host = host
+        self.port = port
+        self.profile = profile
         self._closing = False
         self.selected_id: str | None = None
+        self._detail_exp_id: str | None = None
         self._refresh_after_id: str | None = None
         self.card_widgets: dict[str, dict] = {}
         self._rendered_ids: list[str] = []
@@ -33,6 +47,8 @@ class PipeDLApp(tk.Tk):
         self.update_dialog: tk.Toplevel | None = None
         self.update_label_var = tk.StringVar(value="")
         self.update_progress_var = tk.DoubleVar(value=0.0)
+        self.log_wrap_var = tk.BooleanVar(value=False)
+        self.log_tail_var = tk.BooleanVar(value=True)
         self.colors = {
             "bg": "#f4f7fb",
             "panel": "#ffffff",
@@ -152,25 +168,180 @@ class PipeDLApp(tk.Tk):
         self.bind_all("<Button-5>", self._on_mousewheel)
         main.add(left, weight=1)
 
-        right = ttk.Frame(main, style="TFrame")
-        right.columnconfigure(0, weight=1)
-        right.rowconfigure(1, weight=1)
-        self.detail_var = tk.StringVar(value="Select an experiment.")
-        detail = tk.Frame(right, bg=self.colors["panel"], highlightthickness=1, highlightbackground=self.colors["border"])
-        detail.grid(row=0, column=0, sticky="ew")
-        detail.columnconfigure(0, weight=1)
-        self.detail_label = ttk.Label(detail, textvariable=self.detail_var, justify=tk.LEFT, style="Panel.TLabel")
-        self.detail_label.grid(
-            row=0, column=0, sticky="ew", padx=12, pady=10
+        right_shell = ttk.Frame(main, style="TFrame")
+        right_shell.columnconfigure(0, weight=1)
+        right_shell.rowconfigure(0, weight=1)
+        self.right_canvas = tk.Canvas(
+            right_shell,
+            bg=self.colors["bg"],
+            highlightthickness=0,
+            borderwidth=0,
         )
-        detail.bind("<Configure>", self._resize_detail_label)
-        tabs = ttk.Notebook(right)
-        tabs.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
-        self.stdout_text = tk.Text(tabs, wrap=tk.NONE, height=20, bg="#0f172a", fg="#dbeafe", insertbackground="#dbeafe")
-        self.stderr_text = tk.Text(tabs, wrap=tk.NONE, height=20, bg="#1f1115", fg="#fee2e2", insertbackground="#fee2e2")
-        tabs.add(self.stdout_text, text="stdout")
-        tabs.add(self.stderr_text, text="stderr")
-        main.add(right, weight=2)
+        self.right_scrollbar = ttk.Scrollbar(right_shell, orient=tk.VERTICAL, command=self.right_canvas.yview)
+        right = ttk.Frame(self.right_canvas, style="TFrame")
+        self.right_region = right_shell
+        self.right_content = right
+        self.right_window = self.right_canvas.create_window((0, 0), window=right, anchor="nw")
+        self.right_canvas.configure(yscrollcommand=self.right_scrollbar.set)
+        self.right_canvas.grid(row=0, column=0, sticky="nsew")
+        self.right_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.right_canvas.bind("<Configure>", self._resize_right_window)
+        right.bind("<Configure>", lambda _event: self._sync_right_scrollregion())
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(0, weight=1)
+        self.right_paned = tk.PanedWindow(
+            right,
+            orient=tk.VERTICAL,
+            bg=self.colors["border"],
+            bd=0,
+            sashwidth=7,
+            sashrelief=tk.FLAT,
+            showhandle=False,
+        )
+        self.right_paned.grid(row=0, column=0, sticky="nsew")
+        detail = tk.Frame(self.right_paned, bg=self.colors["panel"], highlightthickness=1, highlightbackground=self.colors["border"])
+        detail.columnconfigure(0, weight=1)
+        detail.bind("<Configure>", self._resize_detail_wraps)
+        self.detail_name_var = tk.StringVar(value="Select an experiment")
+        self.detail_status_var = tk.StringVar(value="READY")
+        self.detail_status_label = tk.Label(
+            detail,
+            textvariable=self.detail_status_var,
+            bg=self.colors["muted"],
+            fg="#ffffff",
+            font=("Segoe UI", 8, "bold"),
+            padx=9,
+            pady=4,
+        )
+        tk.Label(
+            detail,
+            textvariable=self.detail_name_var,
+            bg=self.colors["panel"],
+            fg=self.colors["text"],
+            font=("Segoe UI", 11, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 3))
+        self.detail_status_label.grid(row=0, column=1, sticky="e", padx=(4, 12), pady=(8, 3))
+
+        self.detail_field_vars: dict[str, tk.StringVar] = {}
+        field_grid = tk.Frame(detail, bg=self.colors["panel"])
+        field_grid.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 4))
+        for col in range(4):
+            field_grid.columnconfigure(col, weight=1, uniform="detail_fields")
+        fields = [
+            ("id", "ID"),
+            ("display", "Display"),
+            ("pid", "PID"),
+            ("exit", "Exit"),
+            ("shell", "Shell"),
+            ("queue", "Queue"),
+            ("process_group", "Process Group"),
+            ("created_by", "Created By"),
+        ]
+        for index, (key, label) in enumerate(fields):
+            self.detail_field_vars[key] = self._create_detail_field(
+                field_grid,
+                index // 4,
+                index % 4,
+                label,
+            )
+
+        self.detail_long_vars: dict[str, tk.StringVar] = {}
+        long_frame = tk.Frame(detail, bg=self.colors["panel"])
+        long_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 4))
+        long_frame.columnconfigure(1, weight=1)
+        self.detail_long_labels: list[tk.Label] = []
+        for row, (key, label) in enumerate(
+            (("cwd", "CWD"), ("tags", "Tags"), ("notes", "Notes"), ("times", "Times"), ("paths", "Logs"))
+        ):
+            self.detail_long_vars[key] = tk.StringVar(value="")
+            tk.Label(
+                long_frame,
+                text=label,
+                bg=self.colors["panel"],
+                fg=self.colors["muted"],
+                font=("Segoe UI", 8, "bold"),
+                anchor="nw",
+            ).grid(row=row, column=0, sticky="nw", padx=(0, 8), pady=1)
+            value_label = tk.Label(
+                long_frame,
+                textvariable=self.detail_long_vars[key],
+                bg=self.colors["panel"],
+                fg=self.colors["text"],
+                font=("Segoe UI", 9),
+                anchor="w",
+                justify=tk.LEFT,
+                wraplength=560,
+            )
+            value_label.grid(row=row, column=1, sticky="ew", pady=1)
+            self.detail_long_labels.append(value_label)
+
+        command_shell = tk.Frame(detail, bg=self.colors["panel_alt"], highlightthickness=1, highlightbackground=self.colors["border"])
+        command_shell.grid(row=3, column=0, columnspan=2, sticky="ew", padx=12, pady=(2, 8))
+        command_shell.columnconfigure(0, weight=1)
+        tk.Label(
+            command_shell,
+            text="Command",
+            bg=self.colors["panel_alt"],
+            fg=self.colors["muted"],
+            font=("Segoe UI", 8, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=9, pady=(6, 0))
+        self.command_detail_text = tk.Text(
+            command_shell,
+            wrap=tk.WORD,
+            height=2,
+            bg=self.colors["panel_alt"],
+            fg=self.colors["text"],
+            borderwidth=0,
+            highlightthickness=0,
+            font=("Consolas", 9),
+            state=tk.DISABLED,
+        )
+        command_scroll = ttk.Scrollbar(command_shell, orient=tk.VERTICAL, command=self.command_detail_text.yview)
+        self.command_detail_text.configure(yscrollcommand=command_scroll.set)
+        self.command_detail_text.grid(row=1, column=0, sticky="ew", padx=(9, 0), pady=(3, 8))
+        command_scroll.grid(row=1, column=1, sticky="ns", padx=(4, 8), pady=(3, 8))
+        self._clear_detail_panel()
+        console_pane = ttk.Frame(self.right_paned, style="TFrame")
+        console_pane.columnconfigure(0, weight=1)
+        console_pane.rowconfigure(1, weight=1)
+        log_tools = tk.Frame(console_pane, bg=self.colors["bg"])
+        log_tools.grid(row=0, column=0, sticky="ew", pady=(8, 4))
+        log_tools.columnconfigure(0, weight=1)
+        tk.Label(
+            log_tools,
+            text="Console",
+            bg=self.colors["bg"],
+            fg=self.colors["text"],
+            font=("Segoe UI", 10, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        self.wrap_button = ttk.Checkbutton(
+            log_tools,
+            text="Wrap",
+            variable=self.log_wrap_var,
+            command=self._apply_log_wrap,
+            style="Toolbutton",
+        )
+        self.wrap_button.grid(row=0, column=1, padx=(6, 0))
+        self.tail_button = ttk.Checkbutton(
+            log_tools,
+            text="Tail",
+            variable=self.log_tail_var,
+            command=self._toggle_log_tail,
+            style="Toolbutton",
+        )
+        self.tail_button.grid(row=0, column=2, padx=(6, 0))
+
+        tabs = ttk.Notebook(console_pane)
+        tabs.grid(row=1, column=0, sticky="nsew")
+        stdout_tab, self.stdout_text = self._create_log_tab(tabs, "#0f172a", "#dbeafe")
+        stderr_tab, self.stderr_text = self._create_log_tab(tabs, "#1f1115", "#fee2e2")
+        tabs.add(stdout_tab, text="stdout")
+        tabs.add(stderr_tab, text="stderr")
+        self.right_paned.add(detail, minsize=150)
+        self.right_paned.add(console_pane, minsize=220)
+        main.add(right_shell, weight=2)
 
     def add_experiment(self) -> None:
         command = self.command_var.get().strip()
@@ -204,10 +375,12 @@ class PipeDLApp(tk.Tk):
             return
         summary = self.storage.summary()
         self.summary_var.set(
-            "API http://%s:%s | running=%s paused=%s queued=%s succeeded=%s failed=%s stopped=%s queue_paused=%s"
+            "profile=%s | API http://%s:%s | data=%s | running=%s paused=%s queued=%s succeeded=%s failed=%s stopped=%s queue_paused=%s"
             % (
-                DEFAULT_HOST,
-                DEFAULT_PORT,
+                self.profile,
+                self.host,
+                self.port,
+                self.paths.root,
                 summary["running"],
                 summary["paused_processes"],
                 summary["queued"],
@@ -624,18 +797,18 @@ class PipeDLApp(tk.Tk):
 
     def update_details(self) -> None:
         if not self.selected_id:
-            self.detail_var.set("Select an experiment to inspect command details and logs.")
+            self._detail_exp_id = None
+            self._clear_detail_panel()
             self.stdout_text.delete("1.0", tk.END)
             self.stderr_text.delete("1.0", tk.END)
             return
         exp = self.storage.get_experiment(self.selected_id)
         if not exp:
             return
-        self.detail_var.set(self._detail_text(exp))
-        self.stdout_text.delete("1.0", tk.END)
-        self.stdout_text.insert(tk.END, read_tail(exp["stdout_path"]))
-        self.stderr_text.delete("1.0", tk.END)
-        self.stderr_text.insert(tk.END, read_tail(exp["stderr_path"]))
+        self._detail_exp_id = exp["id"]
+        self._render_detail_panel(exp)
+        self._set_log_text(self.stdout_text, read_tail(exp["stdout_path"]))
+        self._set_log_text(self.stderr_text, read_tail(exp["stderr_path"]))
 
     def pause_queue(self) -> None:
         self.storage.set_queue_paused(True)
@@ -703,26 +876,188 @@ class PipeDLApp(tk.Tk):
         self.card_canvas.itemconfigure(self.cards_window, width=event.width)
         self._sync_card_scrollregion()
 
-    def _resize_detail_label(self, event) -> None:
-        self.detail_label.configure(wraplength=max(320, event.width - 24))
+    def _resize_right_window(self, event) -> None:
+        content_height = max(event.height, self.right_content.winfo_reqheight())
+        self.right_canvas.itemconfigure(self.right_window, width=event.width, height=content_height)
+        self._sync_right_scrollregion()
+
+    def _sync_right_scrollregion(self) -> None:
+        canvas_width = max(1, self.right_canvas.winfo_width())
+        canvas_height = max(1, self.right_canvas.winfo_height())
+        content_height = max(self.right_content.winfo_reqheight(), self.right_content.winfo_height())
+        scroll_height = max(canvas_height, content_height)
+        self.right_canvas.configure(scrollregion=(0, 0, canvas_width, scroll_height))
+        if content_height <= canvas_height:
+            self.right_canvas.yview_moveto(0)
+        else:
+            self._clamp_right_scroll()
+
+    def _right_can_scroll(self) -> bool:
+        canvas_height = max(1, self.right_canvas.winfo_height())
+        content_height = max(self.right_content.winfo_reqheight(), self.right_content.winfo_height())
+        return content_height > canvas_height + 1
+
+    def _clamp_right_scroll(self) -> None:
+        if not self._right_can_scroll():
+            self.right_canvas.yview_moveto(0)
+            return
+        first, last = self.right_canvas.yview()
+        if first < 0:
+            self.right_canvas.yview_moveto(0)
+        elif last > 1:
+            self.right_canvas.yview_moveto(max(0.0, 1.0 - (last - first)))
+
+    def _create_log_tab(self, parent: tk.Widget, bg: str, fg: str) -> tuple[tk.Frame, tk.Text]:
+        frame = tk.Frame(parent, bg=bg)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+        text = tk.Text(frame, wrap=tk.NONE, height=20, bg=bg, fg=fg, insertbackground=fg)
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        text.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self._bind_log_scroll(text)
+        return frame, text
+
+    def _create_detail_field(self, parent: tk.Widget, row: int, column: int, label: str) -> tk.StringVar:
+        box = tk.Frame(parent, bg=self.colors["panel_alt"], highlightthickness=1, highlightbackground=self.colors["border"])
+        box.grid(row=row, column=column, sticky="ew", padx=3, pady=2)
+        box.columnconfigure(0, weight=1)
+        tk.Label(
+            box,
+            text=label,
+            bg=self.colors["panel_alt"],
+            fg=self.colors["muted"],
+            font=("Segoe UI", 8, "bold"),
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=7, pady=(4, 0))
+        value = tk.StringVar(value="-")
+        tk.Label(
+            box,
+            textvariable=value,
+            bg=self.colors["panel_alt"],
+            fg=self.colors["text"],
+            font=("Segoe UI", 9, "bold"),
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=7, pady=(0, 4))
+        return value
+
+    def _clear_detail_panel(self) -> None:
+        self.detail_name_var.set("Select an experiment")
+        self.detail_status_var.set("READY")
+        self.detail_status_label.configure(bg=self.colors["muted"])
+        for value in self.detail_field_vars.values():
+            value.set("-")
+        self.detail_long_vars["cwd"].set("Select a queue card to inspect metadata and logs.")
+        self.detail_long_vars["tags"].set("-")
+        self.detail_long_vars["notes"].set("-")
+        self.detail_long_vars["times"].set("-")
+        self.detail_long_vars["paths"].set("-")
+        self._set_command_detail_text("")
+
+    def _render_detail_panel(self, exp: dict) -> None:
+        display_index = self._display_index(exp["id"])
+        status = exp["status"]
+        queue_position = exp["queue_position"]
+        self.detail_name_var.set(exp["name"] or "Unnamed experiment")
+        self.detail_status_var.set(self._status_label(status))
+        self.detail_status_label.configure(bg=self._status_color(status))
+        self.detail_field_vars["id"].set(exp["id"])
+        self.detail_field_vars["display"].set(f"#{display_index}")
+        self.detail_field_vars["pid"].set(str(exp["pid"]) if exp["pid"] else "-")
+        self.detail_field_vars["exit"].set(str(exp["exit_code"]) if exp["exit_code"] is not None else "-")
+        self.detail_field_vars["shell"].set(exp["shell"])
+        self.detail_field_vars["queue"].set(str(queue_position) if queue_position is not None else "-")
+        self.detail_field_vars["process_group"].set(str(exp["process_group"]) if exp["process_group"] else "-")
+        self.detail_field_vars["created_by"].set(exp["created_by"] or "-")
+        self.detail_long_vars["cwd"].set(exp["cwd"] or "-")
+        self.detail_long_vars["tags"].set(exp.get("tags") or "-")
+        self.detail_long_vars["notes"].set(exp.get("notes") or "-")
+        self.detail_long_vars["times"].set(
+            f"created: {exp['created_at']} | started: {exp['started_at']} | ended: {exp['ended_at']} | updated: {exp['updated_at']}"
+        )
+        self.detail_long_vars["paths"].set(f"stdout: {exp['stdout_path']}\nstderr: {exp['stderr_path']}")
+        self._set_command_detail_text(exp["command"])
+
+    def _set_command_detail_text(self, text: str) -> None:
+        current = self.command_detail_text.get("1.0", "end-1c")
+        if current == text:
+            return
+        self.command_detail_text.configure(state=tk.NORMAL)
+        self.command_detail_text.delete("1.0", tk.END)
+        self.command_detail_text.insert(tk.END, text)
+        self.command_detail_text.configure(state=tk.DISABLED)
+        self.command_detail_text.yview_moveto(0)
+
+    def _resize_detail_wraps(self, event) -> None:
+        wraplength = max(260, event.width - 130)
+        for label in getattr(self, "detail_long_labels", []):
+            label.configure(wraplength=wraplength)
+
+    def _apply_log_wrap(self) -> None:
+        wrap_mode = tk.WORD if self.log_wrap_var.get() else tk.NONE
+        self.stdout_text.configure(wrap=wrap_mode)
+        self.stderr_text.configure(wrap=wrap_mode)
+        if self.log_tail_var.get():
+            self._scroll_logs_to_end()
+
+    def _toggle_log_tail(self) -> None:
+        if self.log_tail_var.get():
+            self._scroll_logs_to_end()
+
+    def _scroll_logs_to_end(self) -> None:
+        self.stdout_text.see(tk.END)
+        self.stderr_text.see(tk.END)
+
+    def _bind_log_scroll(self, widget: tk.Text) -> None:
+        widget.bind("<MouseWheel>", self._on_log_mousewheel, add="+")
+        widget.bind("<Button-4>", self._on_log_mousewheel, add="+")
+        widget.bind("<Button-5>", self._on_log_mousewheel, add="+")
+        widget.bind("<Prior>", self._stop_log_tail, add="+")
+        widget.bind("<Home>", self._stop_log_tail, add="+")
+        widget.bind("<Up>", self._stop_log_tail, add="+")
+
+    def _on_log_mousewheel(self, event) -> None:
+        scrolls_up = event.num == 4 or getattr(event, "delta", 0) > 0
+        if scrolls_up:
+            self.log_tail_var.set(False)
+
+    def _stop_log_tail(self, _event=None) -> None:
+        self.log_tail_var.set(False)
+
+    def _set_log_text(self, widget: tk.Text, text: str) -> None:
+        current_view = widget.yview()
+        current_text = widget.get("1.0", "end-1c")
+        if current_text != text:
+            widget.delete("1.0", tk.END)
+            widget.insert(tk.END, text)
+        if self.log_tail_var.get():
+            widget.see(tk.END)
+        else:
+            widget.yview_moveto(current_view[0])
 
     def _attach_card_select(self, widget: tk.Widget, exp_id: str) -> None:
         widget.bind("<Button-1>", lambda _event, item_id=exp_id: self.select_experiment(item_id), add="+")
 
     def _on_mousewheel(self, event) -> None:
-        if not self._event_in_queue_region(event):
-            return
-        if not self._cards_can_scroll():
-            self.card_canvas.yview_moveto(0)
+        if self._event_in_queue_region(event):
+            return self._scroll_canvas_from_wheel(event, self.card_canvas, self._cards_can_scroll, self._clamp_card_scroll)
+        if self._event_in_right_region(event) and not self._event_in_text_widget(event):
+            return self._scroll_canvas_from_wheel(event, self.right_canvas, self._right_can_scroll, self._clamp_right_scroll)
+        return None
+
+    def _scroll_canvas_from_wheel(self, event, canvas: tk.Canvas, can_scroll, clamp_scroll) -> str:
+        if not can_scroll():
+            canvas.yview_moveto(0)
             return "break"
         if event.num == 4:
-            self.card_canvas.yview_scroll(-3, "units")
+            canvas.yview_scroll(-3, "units")
         elif event.num == 5:
-            self.card_canvas.yview_scroll(3, "units")
+            canvas.yview_scroll(3, "units")
         else:
             delta = int(-1 * (event.delta / 120))
-            self.card_canvas.yview_scroll(delta, "units")
-        self._clamp_card_scroll()
+            canvas.yview_scroll(delta, "units")
+        clamp_scroll()
         return "break"
 
     def _sync_card_scrollregion(self) -> None:
@@ -759,6 +1094,22 @@ class PipeDLApp(tk.Tk):
         bottom = top + widget.winfo_height()
         return left <= event.x_root <= right and top <= event.y_root <= bottom
 
+    def _event_in_right_region(self, event) -> bool:
+        widget = self.right_region
+        left = widget.winfo_rootx()
+        top = widget.winfo_rooty()
+        right = left + widget.winfo_width()
+        bottom = top + widget.winfo_height()
+        return left <= event.x_root <= right and top <= event.y_root <= bottom
+
+    def _event_in_text_widget(self, event) -> bool:
+        widget = event.widget
+        while widget is not None:
+            if isinstance(widget, tk.Text):
+                return True
+            widget = getattr(widget, "master", None)
+        return False
+
     def _status_color(self, status: str) -> str:
         return self.colors.get(status, self.colors["muted"])
 
@@ -777,25 +1128,6 @@ class PipeDLApp(tk.Tk):
             parts.append(f"exit: {exp['exit_code']}")
         parts.append(f"by: {exp['created_by']}")
         return "   ".join(parts)
-
-    def _detail_text(self, exp: dict) -> str:
-        display_index = self._display_index(exp["id"])
-        lines = [
-            f"Name: {exp['name']}",
-            f"ID: {exp['id']}",
-            f"Display #: {display_index} | Queue position: {exp['queue_position']}",
-            f"Status: {exp['status']} | PID: {exp['pid']} | Process group: {exp['process_group']} | Exit: {exp['exit_code']}",
-            f"Shell: {exp['shell']}",
-            f"CWD: {exp['cwd']}",
-            f"Created by: {exp['created_by']}",
-            f"Tags: {exp.get('tags') or ''}",
-            f"Notes: {exp.get('notes') or ''}",
-            f"Created: {exp['created_at']} | Started: {exp['started_at']} | Ended: {exp['ended_at']} | Updated: {exp['updated_at']}",
-            f"stdout: {exp['stdout_path']}",
-            f"stderr: {exp['stderr_path']}",
-            f"Command: {exp['command']}",
-        ]
-        return "\n".join(lines)
 
     def _display_index(self, exp_id: str) -> int:
         for index, exp in enumerate(self.storage.list_experiments(), start=1):
@@ -917,15 +1249,18 @@ class PipeDLApp(tk.Tk):
         self.destroy()
 
 
-def run_app() -> None:
+def run_app(host: str | None = None, port: int | None = None) -> None:
+    host = host or get_host()
+    port = port or get_port()
+    profile = get_profile()
     paths = get_paths()
     storage = Storage(paths)
     scheduler = Scheduler(storage)
-    api_server = LocalApiServer(storage, scheduler)
+    api_server = LocalApiServer(storage, scheduler, host=host, port=port)
     scheduler.start()
     try:
         api_server.start()
     except OSError as exc:
-        raise SystemExit(f"Cannot start PipeDL local API on {DEFAULT_HOST}:{DEFAULT_PORT}: {exc}") from exc
-    app = PipeDLApp(storage, scheduler, api_server)
+        raise SystemExit(f"Cannot start PipeDL local API on {host}:{port}: {exc}") from exc
+    app = PipeDLApp(storage, scheduler, api_server, paths, host, port, profile)
     app.mainloop()

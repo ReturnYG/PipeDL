@@ -110,6 +110,46 @@ pipedl_cli pause
 pipedl_cli resume
 ```
 
+## Isolated Test Instance
+
+PipeDL's default desktop app uses:
+
+```text
+API: 127.0.0.1:48127
+Data: %LOCALAPPDATA%\PipeDL
+```
+
+To test a development build without affecting the installed stable app, run the test instance with a different profile and port:
+
+```powershell
+pipedl_cli --port 48128 app --profile dev
+```
+
+The `dev` profile stores data separately:
+
+```text
+%LOCALAPPDATA%\PipeDL-dev\.pipedl\pipedl.db
+%LOCALAPPDATA%\PipeDL-dev\runs\
+```
+
+Point CLI commands at the test instance with the same port:
+
+```powershell
+pipedl_cli --port 48128 status
+pipedl_cli --port 48128 demo
+pipedl_cli --port 48128 run --name dev-test --shell powershell --cwd D:\project -- python train.py
+```
+
+You can also use environment variables:
+
+```powershell
+$env:PIPEDL_PROFILE="dev"
+$env:PIPEDL_PORT="48128"
+PipeDL
+```
+
+With this setup, demo tasks and registered experiments in the test instance do not affect the stable app's queue, database, runs directory, or API port.
+
 ## Agent Integration
 
 AI agents and scripts should register long-running experiments with PipeDL instead of launching them directly.
