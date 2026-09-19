@@ -86,15 +86,22 @@ def main():
             wait_status(one, {"running"})
             action(two, "stop", expected=409)
             assert call("/experiments/" + one["id"])["status"] == "running"
-            action(one, "pause")
-            assert call("/experiments/" + one["id"])["status"] == "paused"
-            action(one, "resume")
-            for _ in range(100):
+            # A spawned PID does not mean a cold PowerShell runtime has reached the script.
+            # Establish workload readiness before testing its pause/resume cycle.
+            deadline = time.monotonic() + 25
+            while time.monotonic() < deadline:
                 log = call(f"/experiments/{one['id']}/logs?stream=stdout&offset=0")
                 if "first" in log["text"]:
                     break
                 time.sleep(.05)
-            assert "first" in log["text"], log
+            assert "first" in log["text"], {
+                "log": log,
+                "experiment": call("/experiments/" + one["id"]),
+                "stderr": call(f"/experiments/{one['id']}/logs?stream=stderr&offset=0"),
+            }
+            action(one, "pause")
+            assert call("/experiments/" + one["id"])["status"] == "paused"
+            action(one, "resume")
             assert call(f"/experiments/{one['id']}/logs?stream=stdout&offset={log['offset']}")["text"] == ""
             start = time.monotonic()
             action(one, "stop", expected=202)
