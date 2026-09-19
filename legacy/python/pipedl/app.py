@@ -64,6 +64,17 @@ class PipeDLApp(tk.Tk):
             "stopped": "#ea580c",
             "cancelled": "#6b7280",
             "selected": "#e8f1ff",
+            "actions": {
+                "select": ("#2563eb", "#1d4ed8", "#1e40af"),
+                "retry": ("#0f766e", "#0d9488", "#115e59"),
+                "delete": ("#be123c", "#e11d48", "#9f1239"),
+                "stop": ("#b91c1c", "#dc2626", "#991b1b"),
+                "pause": ("#b45309", "#d97706", "#92400e"),
+                "continue": ("#15803d", "#16a34a", "#166534"),
+                "cancel": ("#475569", "#64748b", "#334155"),
+                "queue": ("#7c3aed", "#8b5cf6", "#6d28d9"),
+                "demo": ("#4f46e5", "#6366f1", "#4338ca"),
+            },
         }
         self.title("PipeDL")
         self.geometry("1240x780")
@@ -76,6 +87,10 @@ class PipeDLApp(tk.Tk):
 
     def _build_ui(self) -> None:
         self.style = ttk.Style(self)
+        try:
+            self.style.theme_use("clam")
+        except tk.TclError:
+            pass
         self.style.configure("TFrame", background=self.colors["bg"])
         self.style.configure("Panel.TFrame", background=self.colors["panel"])
         self.style.configure("TLabel", background=self.colors["bg"], foreground=self.colors["text"])
@@ -86,6 +101,7 @@ class PipeDLApp(tk.Tk):
         self.style.configure("TButton", padding=(10, 5))
         self.style.configure("Accent.TButton", padding=(12, 6))
         self.style.configure("Danger.TButton", padding=(10, 5))
+        self._configure_action_button_styles()
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
@@ -98,9 +114,24 @@ class PipeDLApp(tk.Tk):
         ttk.Label(top, textvariable=self.summary_var, style="Summary.TLabel").grid(
             row=1, column=0, sticky="w", pady=(2, 0)
         )
-        ttk.Button(top, text="Pause Queue", command=self.pause_queue).grid(row=0, column=1, rowspan=2, padx=4)
-        ttk.Button(top, text="Continue Queue", command=self.resume_queue).grid(row=0, column=2, rowspan=2, padx=4)
-        ttk.Button(top, text="Stop Current", command=self.stop_current).grid(row=0, column=3, rowspan=2, padx=4)
+        ttk.Button(
+            top,
+            text="Pause Queue",
+            command=self.pause_queue,
+            style=self._action_style("Pause Queue"),
+        ).grid(row=0, column=1, rowspan=2, padx=4)
+        ttk.Button(
+            top,
+            text="Continue Queue",
+            command=self.resume_queue,
+            style=self._action_style("Continue Queue"),
+        ).grid(row=0, column=2, rowspan=2, padx=4)
+        ttk.Button(
+            top,
+            text="Stop Current",
+            command=self.stop_current,
+            style=self._action_style("Stop Current"),
+        ).grid(row=0, column=3, rowspan=2, padx=4)
 
         add = tk.Frame(self, bg=self.colors["panel"], highlightthickness=1, highlightbackground=self.colors["border"])
         add.grid(row=1, column=0, sticky="ew", padx=18, pady=(0, 12))
@@ -128,10 +159,10 @@ class PipeDLApp(tk.Tk):
         ttk.Entry(add, textvariable=self.command_var).grid(
             row=2, column=1, columnspan=5, sticky="ew", padx=4, pady=(0, 12)
         )
-        ttk.Button(add, text="Queue", command=self.add_experiment).grid(
+        ttk.Button(add, text="Queue", command=self.add_experiment, style=self._action_style("Queue")).grid(
             row=2, column=6, padx=(4, 6), pady=(0, 12)
         )
-        ttk.Button(add, text="Demo x5", command=self.add_demo_queue).grid(
+        ttk.Button(add, text="Demo x5", command=self.add_demo_queue, style=self._action_style("Demo x5")).grid(
             row=2, column=7, padx=(0, 12), pady=(0, 12)
         )
 
@@ -779,8 +810,85 @@ class PipeDLApp(tk.Tk):
             self._action_button(parent, "Select", lambda exp_id=exp["id"]: self.select_experiment(exp_id))
             self._action_button(parent, "Delete", lambda exp_id=exp["id"]: self.delete_experiment(exp_id))
 
-    def _action_button(self, parent: tk.Widget, text: str, command, side=tk.TOP, fill=tk.X, padx=0) -> ttk.Button:
-        button = ttk.Button(parent, text=text, command=command)
+    def _configure_action_button_styles(self) -> None:
+        self._action_styles = {
+            "Select": "Select.Action.TButton",
+            "Retry": "Retry.Action.TButton",
+            "Delete": "Delete.Action.TButton",
+            "Stop": "Stop.Action.TButton",
+            "Stop Current": "Stop.Action.TButton",
+            "Pause": "Pause.Action.TButton",
+            "Pause Queue": "Pause.Action.TButton",
+            "Continue": "Continue.Action.TButton",
+            "Continue Queue": "Continue.Action.TButton",
+            "Cancel": "Cancel.Action.TButton",
+            "Queue": "Queue.Action.TButton",
+            "Demo x5": "Demo.Action.TButton",
+        }
+        style_specs = {
+            "Select.Action.TButton": self.colors["actions"]["select"],
+            "Retry.Action.TButton": self.colors["actions"]["retry"],
+            "Delete.Action.TButton": self.colors["actions"]["delete"],
+            "Stop.Action.TButton": self.colors["actions"]["stop"],
+            "Pause.Action.TButton": self.colors["actions"]["pause"],
+            "Continue.Action.TButton": self.colors["actions"]["continue"],
+            "Cancel.Action.TButton": self.colors["actions"]["cancel"],
+            "Queue.Action.TButton": self.colors["actions"]["queue"],
+            "Demo.Action.TButton": self.colors["actions"]["demo"],
+        }
+        for style_name, (base, hover, pressed) in style_specs.items():
+            self.style.configure(
+                style_name,
+                background=base,
+                foreground="#ffffff",
+                bordercolor=base,
+                lightcolor=base,
+                darkcolor=base,
+                focuscolor=base,
+                padding=(10, 5),
+                relief=tk.FLAT,
+            )
+            self.style.map(
+                style_name,
+                background=[
+                    ("disabled", "#cbd5e1"),
+                    ("pressed", pressed),
+                    ("active", hover),
+                ],
+                foreground=[("disabled", "#f8fafc"), ("!disabled", "#ffffff")],
+                bordercolor=[
+                    ("disabled", "#cbd5e1"),
+                    ("pressed", pressed),
+                    ("active", hover),
+                    ("!disabled", base),
+                ],
+                lightcolor=[
+                    ("disabled", "#cbd5e1"),
+                    ("pressed", pressed),
+                    ("active", hover),
+                    ("!disabled", base),
+                ],
+                darkcolor=[
+                    ("disabled", "#cbd5e1"),
+                    ("pressed", pressed),
+                    ("active", hover),
+                    ("!disabled", base),
+                ],
+            )
+
+    def _action_style(self, text: str) -> str:
+        return self._action_styles.get(text, "TButton")
+
+    def _action_button(
+        self,
+        parent: tk.Widget,
+        text: str,
+        command,
+        side=tk.TOP,
+        fill=tk.X,
+        padx=0,
+    ) -> ttk.Button:
+        button = ttk.Button(parent, text=text, command=command, style=self._action_style(text))
         button.pack(side=side, fill=fill, padx=padx, pady=2)
         return button
 

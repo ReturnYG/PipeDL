@@ -1,206 +1,80 @@
 # PipeDL
 
-PipeDL is a local desktop application for managing deep learning experiments launched from command-line commands. It provides a visual experiment queue, process controls, live logs, and a local interface for users, scripts, and AI agents to register experiments.
+**Your experiments, in order.** A local desktop workspace for experiment queues.
+
+PipeDL 0.3 uses **Tauri 2 + Rust + React/TypeScript + authenticated HTTP API**. Python is not required by the application; experiment commands can still use any Python environment.
 
 ## Features
 
-- Card-style desktop queue for experiments
-- Automatic serial scheduling: the next queued experiment starts when the current one finishes
-- Live stdout/stderr log viewer
-- Pause, continue, stop, delete, retry, and reorder operations
-- Retry for finished experiments, including succeeded, failed, stopped, and cancelled runs
-- Bash, WSL, PowerShell, and CMD command runners
-- Local CLI and localhost API for scripts and AI agents
-- SQLite-backed local history and per-experiment log files
+- Serial experiment scheduling; creation, pause/resume, stop, cancel, delete, retry and reordering.
+- Distinct success/failure cards; remove all successful experiments across pages after a second confirmation, preserving failures and active work.
+- Web UI with queue/history, pagination, searchable current page, details and bounded incremental stdout/stderr.
+- Immediate state notifications over SSE. Process control and SQLite never run on the UI thread.
+- One HTTP API for the desktop and scripts. No separately installed control CLI.
+- SQLite history, per-experiment log files, automatic backup of the legacy database.
+- System tray: closing the window keeps the queue running. Quit refuses while an owned task is active.
+- Windows PowerShell/CMD/Bash/WSL runners; Linux Bash runner. POSIX process groups and Windows Job Objects manage descendants.
+- Interrupted runs are quarantined after restart; inherited PIDs are never blindly signalled.
 
-## Install
+## Run and build
 
-Install PipeDL from GitHub Releases:
-
-1. Open the project's GitHub page.
-2. Go to `Releases`.
-3. Download `PipeDL-Setup-<version>.exe`.
-4. Run the installer.
-5. Launch `PipeDL` from the Start Menu.
-
-The installer includes:
-
-- `PipeDL.exe`: the desktop application
-- `pipedl_cli.exe`: the CLI used to register and control experiments
-
-On startup, the installed Windows app checks GitHub Releases for a newer stable version. If an update is available, PipeDL asks before downloading `PipeDL-Setup-<version>.exe` and starting the installer automatically.
-
-Runtime data is stored under:
-
-```text
-%LOCALAPPDATA%\PipeDL\.pipedl\pipedl.db
-%LOCALAPPDATA%\PipeDL\runs\<experiment_id>\
-```
-
-## Uninstall
-
-Uninstall PipeDL from Windows Settings or Control Panel.
-
-The uninstaller removes:
-
-- The installed application files
-- Start Menu shortcuts
-- The PipeDL install directory PATH entry
-- Local database and experiment logs under `%LOCALAPPDATA%\PipeDL`
-
-If PipeDL is still running, the uninstaller attempts to stop `PipeDL.exe` and `pipedl_cli.exe` before removing files.
-
-## Desktop Usage
-
-Start `PipeDL` from the Start Menu. The main window displays experiments as queue cards.
-
-To disable startup update checks, set the environment variable:
-
-```powershell
-setx PIPEDL_DISABLE_UPDATE_CHECK 1
-```
-
-Card actions depend on experiment status:
-
-- Running: `Pause`, `Stop`, `Delete`
-- Paused: `Continue`, `Stop`, `Delete`
-- Queued: drag the left `☰` handle to reorder; `Pause Queue` / `Continue Queue`, `Cancel`, `Delete`
-- Finished: `Retry`, `Select`, `Delete`
-
-Selecting a card opens its full command details and live stdout/stderr logs on the right.
-
-Use `Demo x5` to add five simulated training experiments. Each demo runs 50 epochs with 60 seconds per epoch; the fourth demo intentionally fails so the retry flow can be tested.
-
-## Add Experiments
-
-Start the PipeDL desktop app first, then register experiments with `pipedl_cli.exe`.
-
-PowerShell example:
-
-```powershell
-pipedl_cli run --name train-ps --shell powershell --cwd D:\project -- python train.py
-```
-
-WSL example:
-
-```powershell
-pipedl_cli run --name train-wsl --shell wsl --cwd /mnt/d/project -- python train.py --config config.yaml
-```
-
-Bash example:
+Use Node.js 22+ and stable Rust. Windows needs MSVC C++ build tools, Windows SDK and WebView2. Linux desktop builds need GTK3, WebKitGTK 4.1, Ayatana AppIndicator, librsvg and a C compiler (Ubuntu 24.04 recommended).
 
 ```bash
-pipedl_cli run --name train-bash --shell bash --cwd /mnt/d/project -- python train.py --config config.yaml
+npm ci
+npm run desktop
+npm run package -- --bundles nsis   # Windows installer
+npm run package -- --bundles deb    # Linux package
 ```
 
-`--name` is recommended but optional. If omitted or empty, PipeDL assigns names such as `Exp.01`, `Exp.02`, and so on.
+Project-local tools are under `.tools/`; source `scripts/env.sh` for Rust. `scripts/in-ubuntu.sh` executes commands in the local Ubuntu environment on older WSL hosts. See [development](docs/development.md).
 
-## CLI Commands
+Locally verified Windows deliverables are placed in `artifacts/`: run `PipeDL.exe` directly, or use the NSIS setup executable. Fully exit the old app before opening the same data directory. See [design and performance changes](docs/architecture.md).
+
+The same executable supports `--headless` for integration testing or an explicitly chosen API-only deployment. This is a queue owner, not a command-submission CLI:
 
 ```bash
-pipedl_cli status
-pipedl_cli list
-pipedl_cli demo
-pipedl_cli stop <experiment_id>
-pipedl_cli cancel <experiment_id>
-pipedl_cli delete <experiment_id>
-pipedl_cli retry <experiment_id>
-pipedl_cli move <experiment_id> <position>
-pipedl_cli pause
-pipedl_cli resume
+cargo run --manifest-path src-tauri/Cargo.toml --no-default-features -- --headless
 ```
 
-## Isolated Test Instance
+## Data and authentication
 
-PipeDL's default desktop app uses:
+Windows data: `%LOCALAPPDATA%/PipeDL`. Linux data: `$XDG_DATA_HOME/pipedl` or `~/.local/share/pipedl`.
 
-```text
-API: 127.0.0.1:48127
-Data: %LOCALAPPDATA%\PipeDL
-```
+The API listens **only on `127.0.0.1:48127`**. `/health` is public. Other endpoints require `Authorization: Bearer <token>`. The persistent token is in `<data>/.pipedl/api-token`; the desktop reads it automatically and Settings can copy it. Credentials never appear in URLs or application logs.
 
-To test a development build without affecting the installed stable app, run the test instance with a different profile and port:
-
-```powershell
-pipedl_cli --port 48128 app --profile dev
-```
-
-The `dev` profile stores data separately:
-
-```text
-%LOCALAPPDATA%\PipeDL-dev\.pipedl\pipedl.db
-%LOCALAPPDATA%\PipeDL-dev\runs\
-```
-
-Point CLI commands at the test instance with the same port:
-
-```powershell
-pipedl_cli --port 48128 status
-pipedl_cli --port 48128 demo
-pipedl_cli --port 48128 run --name dev-test --shell powershell --cwd D:\project -- python train.py
-```
-
-You can also use environment variables:
-
-```powershell
-$env:PIPEDL_PROFILE="dev"
-$env:PIPEDL_PORT="48128"
-PipeDL
-```
-
-With this setup, demo tasks and registered experiments in the test instance do not affect the stable app's queue, database, runs directory, or API port.
-
-## Agent Integration
-
-AI agents and scripts should register long-running experiments with PipeDL instead of launching them directly.
-
-To make an AI agent use PipeDL in another project, place PipeDL's `AGENTS.md` file in that project's root directory. Agents that support project instruction files will read it before running commands and will route long-running training, evaluation, benchmark, and deep learning commands through PipeDL.
-
-Download the instruction file into another project with PowerShell:
-
-```powershell
-Invoke-WebRequest `
-  -Uri https://raw.githubusercontent.com/ReturnYG/PipeDL/main/AGENTS.md `
-  -OutFile AGENTS.md
-```
-
-Or with `curl`:
+`PIPEDL_PROFILE=dev` selects a separate data directory; `PIPEDL_ROOT` overrides the whole root; `PIPEDL_PORT` selects another port. Use both a separate root/profile and port for development. Legacy `PIPEDL_HOST`, `PIPEDL_STATE_DIR` and `PIPEDL_RUNS_DIR` are not supported.
 
 ```bash
-curl -L https://raw.githubusercontent.com/ReturnYG/PipeDL/main/AGENTS.md -o AGENTS.md
+export PIPEDL_ROOT="$PWD/.test-data/dev"
+export PIPEDL_PORT=48128
+npm run desktop
 ```
 
-After adding `AGENTS.md`, start the PipeDL desktop app, then ask the agent to launch experiments normally. The agent should first check:
+## Submit
 
 ```bash
-pipedl_cli status
+TOKEN=$(cat "$HOME/.local/share/pipedl/.pipedl/api-token")
+curl --fail http://127.0.0.1:48127/experiments -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"name":"baseline","command":"python -u train.py","shell":"bash","cwd":"/absolute/project/path","created_by":"agent:codex"}'
 ```
 
-Then it should register experiments with:
+Use `powershell`/`cmd` with an absolute Windows directory, or `wsl` with an absolute Linux directory when the app runs on Windows. `bash` means Bash installed on the app host. [Full API](docs/agent-integration.md).
+
+## Verify
 
 ```bash
-pipedl_cli run \
-  --name agent-exp-001 \
-  --shell bash \
-  --cwd /mnt/d/project \
-  --created-by agent:codex \
-  -- python train.py --config a.yaml --gpu 0
+npm run build
+cargo test --manifest-path src-tauri/Cargo.toml --no-default-features
+cargo build --manifest-path src-tauri/Cargo.toml --no-default-features
+python3 scripts/smoke.py src-tauri/target/debug/pipedl
+# Start an isolated API first; see docs/development.md.
+npm run test:ui
 ```
 
-If PipeDL is not running, the agent should ask you to start `PipeDL` first. The desktop app must be running because it owns the queue scheduler and process manager.
+CI checks core behavior, the real HTTP workflow, frontend and Windows desktop build. Python is used only for the portable integration test.
 
-Agents can also submit experiments to the local API:
+## Upgrade
 
-```http
-POST http://127.0.0.1:48127/experiments
-```
+Read [migration and rollback](docs/migration.md). The old implementation is archived in `legacy/python/` and excluded from the new distribution. Stop active experiments and fully exit before upgrading. Closing the window only hides it in the tray.
 
-```json
-{
-  "name": "agent-exp-001",
-  "command": "python train.py --config a.yaml",
-  "shell": "bash",
-  "cwd": "/mnt/d/project",
-  "created_by": "agent:codex"
-}
-```
+Settings opens the official release page. Unattended installer execution is not carried over; a signed update channel requires release signing keys before activation.

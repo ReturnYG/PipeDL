@@ -7,3 +7,11 @@ venv/
 dist/
 build/
 *.egg-info/
+.tools/
+node_modules/
+target/
+src-tauri/gen/
+test-results/
+playwright-report/
+.test-data/
+artifacts/

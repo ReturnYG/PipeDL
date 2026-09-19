@@ -1,138 +1,22 @@
-# PipeDL Agent Instructions
+# PipeDL agent instructions
 
-PipeDL is the experiment queue owner for this workspace. If you are an AI agent asked to launch a long-running training, evaluation, benchmark, or deep learning experiment, register it with PipeDL instead of starting it directly.
+PipeDL owns the experiment queue. Register long-running training, evaluation and benchmark commands through HTTP; do not use direct background commands, nohup, detached terminals or setsid unless the user explicitly requests bypassing PipeDL.
 
-## Required Behavior
-
-1. Check that the PipeDL desktop app is running:
-
-   ```bash
-   pipedl_cli status
-   ```
-
-   If `pipedl_cli` is not found on Windows, try the installed CLI path:
-
-   ```powershell
-   $env:LOCALAPPDATA\Programs\PipeDL\pipedl_cli.exe status
-   ```
-
-2. If the app is not running or the local API is unavailable, tell the user to start the PipeDL desktop app. Do not start the experiment directly as a fallback.
-
-   ```bash
-   PipeDL
-   ```
-
-3. Register the experiment through the CLI:
-
-   ```bash
-   pipedl_cli run \
-     --name <short-experiment-name> \
-     --shell <bash|wsl|powershell|cmd> \
-     --cwd <working-directory> \
-     --created-by agent:<agent-name> \
-     -- <original command and args>
-   ```
-
-   `--name` is recommended for readability. If omitted or empty, PipeDL assigns `Exp.01`, `Exp.02`, and so on.
-
-4. Do not use `nohup`, background `&`, `setsid`, detached terminals, or direct long-running training commands unless the user explicitly asks to bypass PipeDL.
-
-5. After registration, parse the JSON response and report the returned experiment `id` to the user.
-
-## Examples
-
-Bash or WSL-side Python:
-
-```bash
-pipedl_cli run \
-  --name train-baseline \
-  --shell bash \
-  --cwd /mnt/d/project \
-  --created-by agent:codex \
-  -- python train.py --config configs/baseline.yaml --gpu 0
-```
-
-Windows PowerShell:
-
-```bash
-pipedl_cli run \
-  --name train-windows \
-  --shell powershell \
-  --cwd D:\project \
-  --created-by agent:codex \
-  -- python train.py --config configs\baseline.yaml
-```
-
-Explicit WSL runner from Windows:
-
-```bash
-pipedl_cli run \
-  --name train-wsl \
-  --shell wsl \
-  --cwd /mnt/d/project \
-  --created-by agent:codex \
-  -- python train.py --config configs/baseline.yaml
-```
-
-## Local HTTP API
-
-Agents may use the localhost API when direct HTTP calls are easier than shelling out:
-
-```http
-POST http://127.0.0.1:48127/experiments
-Content-Type: application/json
-```
+1. Check `GET http://127.0.0.1:48127/health` (or `PIPEDL_PORT`). If unavailable, ask the user to start PipeDL; do not bypass the queue.
+2. Read `<data-root>/.pipedl/api-token` or copy the token in Settings. Default root: `%LOCALAPPDATA%/PipeDL` on Windows; `$XDG_DATA_HOME/pipedl` / `~/.local/share/pipedl` on Linux. Respect `PIPEDL_ROOT` and `PIPEDL_PROFILE`.
+3. Submit JSON to `POST /experiments` with `Authorization: Bearer <token>` and `Content-Type: application/json`.
+4. Report the returned experiment `id`. Never print the token.
 
 ```json
-{
-  "name": "train-baseline",
-  "command": "python train.py --config configs/baseline.yaml --gpu 0",
-  "shell": "bash",
-  "cwd": "/mnt/d/project",
-  "created_by": "agent:codex",
-  "tags": "baseline,gpu0",
-  "notes": "queued by an AI agent"
-}
+{"name":"baseline","command":"python -u train.py --config configs/baseline.yaml","shell":"bash","cwd":"/absolute/project","created_by":"agent:codex"}
 ```
 
-Useful endpoints:
+Use bash for Linux/WSL-hosted PipeDL, powershell/cmd for native Windows tasks, and wsl for Windows-hosted PipeDL launching the default WSL distribution. WSL requires a Linux absolute cwd; other runners require an existing absolute host directory.
 
-```text
-GET  /health
-GET  /summary
-GET  /experiments
-GET  /experiments/<id>
-GET  /experiments/<id>/logs?stream=stdout
-GET  /experiments/<id>/logs?stream=stderr
-POST /experiments/<id>/stop
-POST /experiments/<id>/pause
-POST /experiments/<id>/resume
-POST /experiments/<id>/cancel
-POST /experiments/<id>/delete
-POST /experiments/<id>/retry
-POST /experiments/<id>/move   {"position": 1}
-POST /queue/pause
-POST /queue/resume
-```
+See `docs/agent-integration.md`. There is no control CLI in 0.3.
 
-## Shell Selection
+## Development
 
-- Use `bash` for commands that should run in the current Linux/WSL environment.
-- Use `wsl` for Windows-side agents that need PipeDL to run the command through `wsl.exe`.
-- Use `powershell` for Windows PowerShell commands.
-- Use `cmd` for Windows `cmd.exe /C` commands.
+Active code is in `src-tauri/` and `ui/`. `legacy/python/` is preserved for rollback, not a production entry point. Use disposable roots and separate ports for tests. Short build/unit/integration checks are not long-running experiments; subprocess test workloads must still go through the test instance API.
 
-## Naming
-
-Prefer names that are short but informative:
-
-```text
-dataset_model_variant_lr_gpu
-```
-
-Examples:
-
-```text
-shhb_moe_hard_lr1e4_gpu0
-imagenet_resnet50_amp_gpu1
-```
+Keep frontend build, Rust tests and `scripts/smoke.py` passing. Commit lockfiles, not `.tools/`, bundles or runtime data.

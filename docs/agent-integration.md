@@ -1,102 +1,43 @@
-# Agent Integration
+# Local HTTP API
 
-PipeDL accepts experiment registrations from other agents through two stable entry points:
+Start PipeDL first, check `GET /health`, submit commands and record the returned `id`. Do not launch long-running experiments directly or detach them.
 
-1. CLI registration with `pipedl_cli run`
-2. Localhost-only HTTP registration on `127.0.0.1:48127`
+All endpoints except `/health` need `Authorization: Bearer <token>`. Read `<data>/.pipedl/api-token` or copy it in Settings. JSON uses `Content-Type: application/json`. API binding is loopback-only. WSL-to-Windows localhost connectivity depends on networking mode; if unavailable, invoke a Windows-side HTTP client rather than exposing the API on all interfaces.
 
-The desktop app must be running because it owns the queue scheduler and process manager.
+| Method | Route | Behavior |
+|---|---|---|
+| GET | `/health` | Health and version |
+| GET | `/info` | Data root, platform and supported shells |
+| GET | `/summary` | Counts and queue pause state |
+| GET | `/experiments?status=active&offset=0&limit=50` | Page, `total`, `summary`; limit 1–500, default 100 |
+| POST | `/experiments` | Register; returns task, HTTP 201 |
+| GET | `/experiments/{id}` | Full record |
+| GET | `/experiments/{id}/logs?stream=stdout&offset=0` | Up to 64 KiB, `text`, byte `offset`, `reset`, `more` |
+| GET | `/events` | SSE `change`; refetch on any event/reconnect |
+| POST | `/experiments/{id}/pause` | Pause owned process tree |
+| POST | `/experiments/{id}/resume` | Resume owned paused task |
+| POST | `/experiments/{id}/stop` | HTTP 202 after requesting stop; await terminal state |
+| POST | `/experiments/{id}/cancel` | Cancel queued task |
+| POST | `/experiments/{id}/delete` | HTTP 202; stop active task before deleting record/logs |
+| POST | `/experiments/{id}/retry` | New ID; preserve original history; HTTP 201 |
+| POST | `/experiments/{id}/move` | `{"position":1}` in the entire queued set |
+| POST | `/experiments/{id}/resolve` | Resolve quarantined run after old PID disappears |
+| POST | `/queue/pause` | Stop launching tasks; current task unaffected |
+| POST | `/queue/resume` | Resume; refused while quarantined runs remain |
 
-## Recommended Agent Workflow
-
-Use this flow whenever an agent wants to launch a deep learning experiment:
-
-```text
-check PipeDL status
-  -> if unavailable, ask the user to start PipeDL
-  -> submit command to PipeDL
-  -> record returned experiment id
-  -> optionally poll status/logs
-```
-
-## CLI Registration
-
-```bash
-pipedl_cli run \
-  --name <name> \
-  --shell <bash|wsl|powershell|cmd> \
-  --cwd <working-directory> \
-  --created-by agent:<agent-name> \
-  -- <command> <args>
-```
-
-`--name` is recommended but optional. Empty names are automatically displayed as `Exp.01`, `Exp.02`, and so on.
-
-Example:
-
-```bash
-pipedl_cli run \
-  --name shhb_moe_lr1e4_gpu0 \
-  --shell bash \
-  --cwd /mnt/d/Dev/project/crowdcounting_moe \
-  --created-by agent:codex \
-  -- python train.py --config workspace/configs/shhb.yaml --gpu 0
-```
-
-The CLI prints JSON containing the experiment `id`, status, command, and log paths.
-
-## HTTP Registration
-
-```bash
-curl -s http://127.0.0.1:48127/experiments \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "shhb_moe_lr1e4_gpu0",
-    "command": "python train.py --config workspace/configs/shhb.yaml --gpu 0",
-    "shell": "bash",
-    "cwd": "/mnt/d/Dev/project/crowdcounting_moe",
-    "created_by": "agent:codex",
-    "tags": "shhb,moe,gpu0"
-  }'
-```
-
-## Polling
-
-```bash
-pipedl_cli status
-pipedl_cli list
-```
-
-HTTP:
-
-```text
-GET http://127.0.0.1:48127/summary
-GET http://127.0.0.1:48127/experiments
-GET http://127.0.0.1:48127/experiments/<id>
-GET http://127.0.0.1:48127/experiments/<id>/logs?stream=stdout
-GET http://127.0.0.1:48127/experiments/<id>/logs?stream=stderr
-```
-
-## Control
-
-```text
-POST /experiments/<id>/stop
-POST /experiments/<id>/pause
-POST /experiments/<id>/resume
-POST /experiments/<id>/cancel
-POST /experiments/<id>/delete
-POST /experiments/<id>/retry
-POST /experiments/<id>/move
-POST /queue/pause
-POST /queue/resume
-```
-
-For `/experiments/<id>/move`, send:
+`status` accepts `active`, `history`, `all` or an exact status. Pagination never limits scheduling/reordering. No log offset starts at the last 64 KiB. Save the returned byte offset; clear old text when `reset=true`. Render logs as text, never HTML. SSE notifications are not a durable event journal.
 
 ```json
-{"position": 1}
+{"name":"baseline","command":"python -u train.py --config configs/baseline.yaml","shell":"bash","cwd":"/absolute/project","created_by":"agent:codex","tags":"baseline,gpu0","notes":"Optional"}
 ```
 
-## Important Rule
+`command` and `cwd` are required. Empty/omitted name becomes `Exp.01`, `Exp.02`, etc. Apply the selected shell's quoting conventions. POST requests are not automatically retried: a timeout may mean creation succeeded; inspect the queue before resubmitting.
 
-Agents should not detach the process themselves. Avoid `nohup`, `setsid`, background `&`, new terminals, or raw long-running training commands. PipeDL must be the parent process so it can capture logs, detect completion, and start the next queued experiment.
+Send `{}` for empty action bodies. Unknown tasks return 404; authentication 401; rejected origin/host 403; state/validation conflicts 409. Malformed JSON/types use Axum 400/422 responses; oversized bodies are rejected. Application errors use `{"error":"..."}`.
+
+Pause does not release GPU memory. Windows native stop terminates the Job Object; POSIX/WSL stop requests TERM then escalates after eight seconds. WSL uses the default distribution and a Linux process-group marker; changing the default distribution during a running task is unsupported. Failed controls are reported without claiming success.
+# Bulk removal of successful experiments
+
+`POST /experiments/delete-completed` requires `{"confirm":true}` and the same Bearer token as other mutations. It removes every `succeeded` experiment and its owned log directory across all pages. Failed, stopped, cancelled, orphaned, queued and active experiments are retained. The response is `{"deleted":3,"failures":[]}`; individual filesystem/database failures are reported as `{id,error}` entries and are not counted as deleted. Calling again when no successful records remain returns zero.
+
+The desktop exposes this operation in History with a second confirmation dialog. Cancelling that dialog sends no deletion request.

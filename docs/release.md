@@ -1,55 +1,11 @@
-# Release Process
+# Release
 
-PipeDL is intended to be installed on Windows from GitHub Releases.
+Keep versions in package.json, src-tauri/Cargo.toml and src-tauri/tauri.conf.json aligned. Refresh lockfiles and test before tagging v<version>.
 
-## User Install Flow
+The workflow builds the Windows Rust/Tauri executable and NSIS installer. Neither CLI nor Python runtime is distributed. WebView2 is bootstrapped by the Tauri installer. NSIS replaces Inno Setup: back up data before uninstalling the old app, whose old uninstaller deletes runtime data.
 
-1. Open the GitHub repository.
-2. Select `Releases`.
-3. Download `PipeDL-Setup-<version>.exe`.
-4. Run the installer.
-5. Start `PipeDL` from the Start Menu.
+The new installer must preserve databases/logs on uninstall. Upgrade only with an idle queue and the app fully exited.
 
-The installer provides:
+Settings opens GitHub Releases. Automatic installer execution is disabled until a signed update channel is configured. Signing secrets belong in CI, never in source. Do not invent keys or bypass signature verification.
 
-- `PipeDL.exe`: desktop GUI, no terminal window
-- `pipedl_cli.exe`: CLI for users, scripts, and AI agents
-
-The installer adds the install directory to the current user's `PATH`, so new terminals can run:
-
-```powershell
-pipedl_cli status
-pipedl_cli run --name exp001 --shell powershell --cwd D:\project -- python train.py
-```
-
-The uninstaller removes the installed files, Start Menu shortcuts, the user PATH entry, and PipeDL runtime data under `%LOCALAPPDATA%\PipeDL`.
-
-## Maintainer Release Flow
-
-Push a version tag:
-
-```bash
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-GitHub Actions will build and upload:
-
-- `PipeDL-Setup-<version>.exe`
-- `PipeDL-portable-<version>.zip`
-
-The desktop app uses the latest non-draft, non-prerelease GitHub Release for startup update checks. Keep the installer asset named `PipeDL-Setup-<version>.exe` so automatic updates can find it.
-
-## Local Windows Build
-
-Install Python 3.11 and Inno Setup, then run:
-
-```powershell
-.\scripts\build_windows.ps1 -Version 0.2.0
-```
-
-To build only the executable files without an installer:
-
-```powershell
-.\scripts\build_windows.ps1 -Version 0.2.0 -SkipInstaller
-```
+Local Windows build: scripts/build_windows.ps1. Use -SkipInstaller for just the executable. CI uploads artifacts; a version tag publishes them. Local tests do not publish anything.
