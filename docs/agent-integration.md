@@ -11,6 +11,7 @@ All endpoints except `/health` need `Authorization: Bearer <token>`. Read `<data
 | GET | `/summary` | Counts and queue pause state |
 | GET | `/experiments?status=active&offset=0&limit=50` | Page, `total`, `summary`; limit 1–500, default 100 |
 | POST | `/experiments` | Register; returns task, HTTP 201 |
+| POST | `/experiments/delete-completed` | `{"confirm":true}`; permanently remove all successful records/logs across pages |
 | GET | `/experiments/{id}` | Full record |
 | GET | `/experiments/{id}/logs?stream=stdout&offset=0` | Up to 64 KiB, `text`, byte `offset`, `reset`, `more` |
 | GET | `/events` | SSE `change`; refetch on any event/reconnect |
@@ -36,7 +37,8 @@ All endpoints except `/health` need `Authorization: Bearer <token>`. Read `<data
 Send `{}` for empty action bodies. Unknown tasks return 404; authentication 401; rejected origin/host 403; state/validation conflicts 409. Malformed JSON/types use Axum 400/422 responses; oversized bodies are rejected. Application errors use `{"error":"..."}`.
 
 Pause does not release GPU memory. Windows native stop terminates the Job Object; POSIX/WSL stop requests TERM then escalates after eight seconds. WSL uses the default distribution and a Linux process-group marker; changing the default distribution during a running task is unsupported. Failed controls are reported without claiming success.
-# Bulk removal of successful experiments
+
+## Bulk removal of successful experiments
 
 `POST /experiments/delete-completed` requires `{"confirm":true}` and the same Bearer token as other mutations. It removes every `succeeded` experiment and its owned log directory across all pages. Failed, stopped, cancelled, orphaned, queued and active experiments are retained. The response is `{"deleted":3,"failures":[]}`; individual filesystem/database failures are reported as `{id,error}` entries and are not counted as deleted. Calling again when no successful records remain returns zero.
 

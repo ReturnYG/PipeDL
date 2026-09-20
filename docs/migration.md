@@ -21,6 +21,6 @@ Old running/paused/stopping rows become `orphaned`, and the queue pauses. Verify
 
 ## Rollback
 
-Stop new-version tasks and exit. Archive the current whole data root to preserve new history. Restore the pre-upgrade backup to a separate root, then run `legacy/python/` there. If restoring only `pipedl-pre-v3.db`, copy it to `.pipedl/pipedl.db` in a fresh directory without WAL/SHM files, preserving logs and their absolute paths. Never overwrite a live database or automatically merge backups with newer history.
+Stop new-version tasks and exit. Archive the current whole data root to preserve new history. Restore the pre-upgrade backup to a separate data root. Obtain the old Python implementation from `legacy/python/` in Git tag `v0.3.2` using a separate checkout, and configure it to use the restored data root. If restoring only `pipedl-pre-v3.db`, copy it to `.pipedl/pipedl.db` in a fresh directory without WAL/SHM files, preserving logs and their absolute paths. Never overwrite a live database or automatically merge backups with newer history.
 
 The backup/quarantine behavior is checked by `src-tauri/tests/storage.rs`. Production rollback remains an operator action.
